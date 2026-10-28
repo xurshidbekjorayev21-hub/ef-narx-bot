@@ -1,16 +1,30 @@
-app = "ef-narx-bot"
-primary_region = "ams"
+# fly.toml app configuration file generated for ef-narx-bot on 2026-10-28T15:05:20Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'ef-narx-bot'
+primary_region = 'ams'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  PYTHONUNBUFFERED = "1"
+  PYTHONUNBUFFERED = '1'
 
 [processes]
-  app = "python -u main.py"
+  app = 'python -u main.py'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
 
 [[vm]]
-  cpu_kind = "shared"
+  memory = '256mb'
+  cpu_kind = 'shared'
   cpus = 1
-  memory = "256mb"
+  memory_mb = 256
