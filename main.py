@@ -5,7 +5,6 @@ import sqlite3
 import logging
 import urllib.request
 import urllib.error
-from efhub_data import search_players
 from datetime import datetime, timedelta, timezone
 from statistics import median
 
@@ -67,30 +66,6 @@ def init_db():
                 price_uzs INTEGER NOT NULL,
                 source TEXT DEFAULT 'admin',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_subscriptions (
-                user_id INTEGER PRIMARY KEY,
-                expires_at TIMESTAMP,
-                free_analysis_used INTEGER NOT NULL DEFAULT 0
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS payment_requests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                status TEXT NOT NULL DEFAULT "pending",
-                receipt_file_id TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                reviewed_at TIMESTAMP,
-                reviewed_by INTEGER
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS price_request_limits (
-                user_id INTEGER PRIMARY KEY,
-                last_request_at TEXT NOT NULL
             )
         """)
         # Upgrade an older database without losing existing records.
@@ -286,180 +261,14 @@ async def check_subscription_callback(update: Update, context: ContextTypes.DEFA
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await subscription_check(update, context):
         return
-
-    keyboard = ReplyKeyboardMarkup(
-        [
-            ["💰 Akkaunt narxini aniqlash"],
-            ["⭐ Obuna sotib olish"],
-        ],
-        resize_keyboard=True,
-    )
-
     await update.message.reply_text(
         "⚽ Assalomu alaykum! Bu — eF Narx Bot.\n\n"
-        "1️⃣ 💰 Akkaunt narxini aniqlash — bepul.\n"
-        "2️⃣ ⭐ Obuna — 14 kun uchun 10 000 so‘m.\n\n"
-        "Quyidagi tugmalardan birini tanlang.",
-        reply_markup=keyboard,
+        "Akkauntni baholash uchun /bahola buyrug‘ini bosing. Avval eFootball jamoangizning "
+        "o‘yin ichidagi skrinshotini yuborish so‘raladi. Boshqa rasmlar qabul qilinmaydi.\n\n"
+        "Narx faqat yetarli o‘xshash ma’lumot bo‘lsa ko‘rsatiladi; bu kafolatlangan sotuv narxi emas.",
+        reply_markup=ReplyKeyboardRemove(),
     )
 
-
-
-
-async def subscription_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 To‘lov qilish", callback_data="begin_payment")]
-    ])
-    await update.message.reply_text(
-        "⭐ eF Narx Bot obunasi\n\n"
-        "💰 Narxi: 10 000 so‘m\n"
-        "🗓 Muddati: 14 kun\n\n"
-        "To‘lovdan so‘ng chekni botga yuboring. Administrator pul tushganini bank ilovasidan tekshiradi. "
-        "Chekning o‘zi obunani faollashtirmaydi.",
-        reply_markup=keyboard,
-    )
-
-
-async def begin_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    context.user_data["awaiting_payment_receipt"] = True
-
-    await query.message.reply_text(
-        "⭐ eF Narx Bot — obuna to‘lovi\n\n"
-        "💰 Summa: 10 000 so‘m\n"
-        "🗓 Muddat: 14 kun\n\n"
-        "💳 Karta: 9860350147639370\n"
-        "👤 Karta egasi: Xurshidbek Jo‘rayev\n"
-        "🏦 Bank: TBC Bank (Humo)\n\n"
-        "To‘lovni amalga oshirgach, chek rasmini shu chatga yuboring. "
-        "Administrator pul tushganini bank ilovasidan tekshiradi. "
-        "Chek yuborishning o‘zi obunani faollashtirmaydi. "
-        "Soxta yoki boshqa to‘lovga tegishli cheklar rad etiladi."
-    )
-
-
-async def payment_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if not context.user_data.get("awaiting_payment_receipt"):
-        return
-
-    if not update.message.photo:
-        await update.message.reply_text("Iltimos, to‘lov chekini rasm shaklida yuboring.")
-        return
-
-    receipt_id = update.message.photo[-1].file_id
-    with db() as conn:
-        cur = conn.execute(
-            "INSERT INTO payment_requests (user_id, status, receipt_file_id) VALUES (?, ?, ?)",
-            (user.id, "pending", receipt_id),
-        )
-        request_id = cur.lastrowid
-
-    context.user_data["awaiting_payment_receipt"] = False
-
-    await context.bot.send_photo(
-        chat_id=ADMIN_ID,
-        photo=receipt_id,
-        caption=f"💳 Yangi to‘lov cheki\nSo‘rov: {request_id}\nFoydalanuvchi ID: {user.id}\n"
-                "Bank ilovasidan haqiqiy tushumni tekshiring. Chekning o‘zi obunani faollashtirmaydi.",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"pay_approve:{request_id}"),
-            InlineKeyboardButton("❌ Rad etish", callback_data=f"pay_reject:{request_id}"),
-        ]]),
-    )
-    await update.message.reply_text(
-        "✅ Chek administratorga yuborildi. Obuna faqat haqiqiy to‘lov bankda tekshirilgach faollashadi."
-    )
-
-
-
-async def review_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if not ADMIN_ID or query.from_user.id != ADMIN_ID:
-        await query.message.reply_text("⛔ Bu amal faqat administrator uchun.")
-        return
-
-    try:
-        action, request_id_text = query.data.split(":", 1)
-        request_id = int(request_id_text)
-    except (ValueError, AttributeError):
-        await query.message.reply_text("❌ Noto‘g‘ri to‘lov so‘rovi.")
-        return
-
-    if action not in ("pay_approve", "pay_reject"):
-        await query.message.reply_text("❌ Noma’lum amal.")
-        return
-
-    status = "approved" if action == "pay_approve" else "rejected"
-    admin_message = (
-        "✅ To‘lov tasdiqlandi. Obuna 14 kunga faollashtirildi."
-        if status == "approved"
-        else "❌ To‘lov so‘rovi rad etildi."
-    )
-    user_message = (
-        "🎉 To‘lovingiz tasdiqlandi. Obunangiz 14 kun faol."
-        if status == "approved"
-        else "❌ To‘lov chekingiz rad etildi. Savolingiz bo‘lsa administratorga murojaat qiling."
-    )
-
-    try:
-        with db() as conn:
-            payment = conn.execute(
-                "SELECT user_id FROM payment_requests WHERE id=? AND status='pending'",
-                (request_id,),
-            ).fetchone()
-
-            if not payment:
-                await query.message.reply_text(
-                    "ℹ️ Bu to‘lov so‘rovi allaqachon ko‘rib chiqilgan yoki topilmadi."
-                )
-                return
-
-            cur = conn.execute(
-                "UPDATE payment_requests SET status=?, reviewed_at=CURRENT_TIMESTAMP, "
-                "reviewed_by=? WHERE id=? AND status='pending'",
-                (status, query.from_user.id, request_id),
-            )
-            if cur.rowcount != 1:
-                await query.message.reply_text(
-                    "ℹ️ Bu to‘lov so‘rovi allaqachon ko‘rib chiqilgan."
-                )
-                return
-
-            if status == "approved":
-                expires = (
-                    datetime.now(timezone.utc) + timedelta(days=14)
-                ).isoformat()
-                conn.execute(
-                    "INSERT INTO user_subscriptions "
-                    "(user_id, expires_at, free_analysis_used) VALUES (?, ?, 0) "
-                    "ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at",
-                    (payment["user_id"], expires),
-                )
-    except Exception:
-        log.exception("To‘lovni ko‘rib chiqishda xato: %s", request_id)
-        await query.message.reply_text(
-            "❌ To‘lovni qayta ishlashda xato yuz berdi. Loglarni tekshiring."
-        )
-        return
-
-    try:
-        caption = (query.message.caption or "") + "\n\n" + admin_message
-        await query.edit_message_caption(caption=caption, reply_markup=None)
-    except Exception:
-        log.exception("Administrator xabarini yangilashda xato: %s", request_id)
-
-    try:
-        await context.bot.send_message(
-            chat_id=payment["user_id"],
-            text=user_message,
-        )
-    except Exception:
-        log.exception("Foydalanuvchiga to‘lov xabarini yuborishda xato: %s", request_id)
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -485,31 +294,6 @@ async def narx_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def bahola(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    now = datetime.now(timezone.utc)
-
-    with db() as conn:
-        row = conn.execute(
-            "SELECT last_request_at FROM price_request_limits WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
-
-        if row:
-            last = datetime.fromisoformat(row["last_request_at"])
-            if last.tzinfo is None:
-                last = last.replace(tzinfo=timezone.utc)
-            elapsed = (now - last).total_seconds()
-            remaining = 7200 - elapsed
-
-            if remaining > 0:
-                minutes = int(remaining // 60) + 1
-                await update.message.reply_text(
-                    f"⏳ Siz yaqinda akkaunt narxini aniqlatgansiz. "
-                    f"Iltimos, {minutes} daqiqadan keyin qayta urinib ko‘ring."
-                )
-                return ConversationHandler.END
-
-
     context.user_data.clear()
     await update.message.reply_text(
         "📸 Avval eFootball o‘yinidagi jamoangiz/akkauntingiz ekranining skrinshotini yuboring.\n\n"
@@ -689,80 +473,44 @@ async def estimate_manual(platform, epic, bigtime, showtime):
 async def coins_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         n = int(update.message.text.strip().replace(" ", ""))
-        if not 0 <= n <= 1000000:
-            raise ValueError
+        if not 0 <= n <= 1000000: raise ValueError
     except ValueError:
-        await update.message.reply_text(
-            "Coin sonini 0–1 000 000 oralig‘ida kiriting."
-        )
+        await update.message.reply_text("Coin sonini 0–1 000 000 oralig‘ida kiriting.")
         return COINS
-
     d = context.user_data
     d["coins"] = n
-
     with db() as conn:
-        conn.execute(
-            """
+        conn.execute("""
             INSERT INTO valuations
-            (user_id, platform, epic, bigtime, showtime, google_play,
-             game_center, konami_id, minus_coins, coins, team_strength)
+            (user_id, platform, epic, bigtime, showtime, google_play, game_center, konami_id, minus_coins, coins, team_strength)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                update.effective_user.id,
-                d["platform"],
-                d["epic"],
-                d["bigtime"],
-                d["showtime"],
-                d["google_play"],
-                d["game_center"],
-                d["konami_id"],
-                d["minus_coins"],
-                d["coins"],
-                d.get("team_strength"),
-            ),
-        )
+        """, (
+            update.effective_user.id, d["platform"], d["epic"], d["bigtime"], d["showtime"],
+            d["google_play"], d["game_center"], d["konami_id"], d["minus_coins"], d["coins"], d.get("team_strength")
+        ))
 
-    prices, recent_total, comparable_count = estimate_from_recent_listings(
-        d.get("team_strength"), d["coins"]
-    )
-
+    prices, recent_total, comparable_count = estimate_from_recent_listings(d.get("team_strength"), d["coins"])
     if not prices:
-        prices, manual_count = await estimate_manual(
-            d["platform"], d["epic"], d["bigtime"], d["showtime"]
-        )
-
-    text = "📊 Akkaunt ma’lumotlari hisoblandi.\n\n"
+        prices, manual_count = await estimate_manual(d["platform"], d["epic"], d["bigtime"], d["showtime"])
 
     if prices:
         low, mid, high = prices
         text += (
-            "💵 TAXMINIY NARX ORALIG‘I (UZS):\n"
-            f"🔴 Tez sotish: {low:,} so‘m\n"
-            f"🟡 O‘rtacha: {mid:,} so‘m\n"
-            f"🟢 Yuqoriroq: {high:,} so‘m\n\n"
-            "🇺🇿 Bot O‘zbekiston eFootball akkauntlari bozorini tahlil qilgan "
-            "holda narx belgilaydi. Narxlar o‘ylab topilmaydi!"
+            "💵 TAXMINIY NARX ORALIG‘I (UZS):\\n"
+            f"🔴 Tez sotish: {low:,} so‘m\\n"
+            f"🟡 O‘rtacha: {mid:,} so‘m\\n"
+            f"🟢 Yuqoriroq: {high:,} so‘m\\n\\n"
+            "🇺🇿 Bot O‘zbekiston eFootball akkauntlari bozorini tahlil qilgan holda narx belgilaydi. Narxlar o‘ylab topilmaydi!"
         ).replace(",", " ")
     else:
         text += (
-            "⚠️ Hozircha ishonchli narx chiqarish uchun o‘xshash ma’lumot yetarli emas.\n"
-            "Rasmda jamoa kuchi aniq ko‘rinmasa yoki o‘xshash e’lonlar kam bo‘lsa, "
-            "bot narxni to‘qib chiqarmaydi."
+            "⚠️ Hozircha ishonchli narx chiqarish uchun o‘xshash ma’lumot yetarli emas.\\n"
+            "Rasmda jamoa kuchi aniq ko‘rinmasa yoki o‘xshash e’lonlar kam bo‘lsa, bot narxni to‘qib chiqarmaydi."
         )
-
-    with db() as conn:
-        conn.execute(
-            "INSERT INTO price_request_limits (user_id, last_request_at) VALUES (?, ?) "
-            "ON CONFLICT(user_id) DO UPDATE SET last_request_at=excluded.last_request_at",
-            (update.effective_user.id, datetime.now(timezone.utc).isoformat()),
-        )
-
     await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
-    await update.message.reply_text(
-        "Yana baholash uchun /bahola buyrug‘ini bosing."
-    )
+    await update.message.reply_text("Yana baholash uchun /bahola buyrug‘ini bosing.")
     return ConversationHandler.END
+
 
 async def addsale(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ADMIN_ID or update.effective_user.id != ADMIN_ID:
@@ -814,14 +562,6 @@ def main():
     )
     app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="^check_subscription$"))
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & filters.Regex("^⭐ Obuna sotib olish$"), subscription_menu))
-    app.add_handler(CallbackQueryHandler(begin_payment, pattern="^begin_payment$"))
-    app.add_handler(CallbackQueryHandler(review_payment, pattern="^pay_(approve|reject):[0-9]+$"))
-    app.add_handler(MessageHandler(filters.PHOTO, payment_receipt), group=1)
-    app.add_handler(MessageHandler(
-        filters.TEXT & filters.Regex("^💰 Akkaunt narxini aniqlash$"),
-        bahola
-    ))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("narx", narx_cmd))
     app.add_handler(CommandHandler("addsale", addsale))
