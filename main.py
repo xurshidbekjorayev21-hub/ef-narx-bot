@@ -290,7 +290,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = ReplyKeyboardMarkup(
         [
             ["💰 Akkaunt narxini aniqlash"],
-            ["🔍 Akkauntni tahlil qilish"],
             ["⭐ Obuna sotib olish"],
         ],
         resize_keyboard=True,
@@ -299,256 +298,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "⚽ Assalomu alaykum! Bu — eF Narx Bot.\n\n"
         "1️⃣ 💰 Akkaunt narxini aniqlash — bepul.\n"
-        "2️⃣ 🔍 Akkauntni tahlil qilish — birinchi marta bepul, keyingi tahlillar obuna orqali.\n"
-        "3️⃣ ⭐ Obuna — 14 kun uchun 10 000 so‘m.\n\n"
+        "2️⃣ ⭐ Obuna — 14 kun uchun 10 000 so‘m.\n\n"
         "Quyidagi tugmalardan birini tanlang.",
         reply_markup=keyboard,
     )
 
-
-
-ANALYSIS_MAIN, ANALYSIS_BENCH = 100, 101
-
-async def analysis_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    now = datetime.now(timezone.utc)
-    with db() as conn:
-        row = conn.execute(
-            "SELECT expires_at, free_analysis_used FROM user_subscriptions WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
-        if row:
-            expires = datetime.fromisoformat(row["expires_at"]) if row["expires_at"] else None
-            if expires and expires.tzinfo is None:
-                expires = expires.replace(tzinfo=timezone.utc)
-            subscribed = bool(expires and expires > now)
-            free_used = bool(row["free_analysis_used"])
-        else:
-            subscribed = False
-            free_used = False
-            conn.execute(
-                "INSERT INTO user_subscriptions (user_id, free_analysis_used) VALUES (?, 0)",
-                (user_id,),
-            )
-        if not subscribed and free_used:
-            await update.message.reply_text(
-                "⭐ Bepul tahlilingiz ishlatilgan. Davom etish uchun 14 kunlik obunani sotib oling."
-            )
-            return ConversationHandler.END
-    context.user_data["analysis_is_free"] = not subscribed and not free_used
-    context.user_data.pop("analysis_main_photo", None)
-    context.user_data.pop("analysis_bench_photo", None)
-    await update.message.reply_text(
-        "🔍 Akkaunt tahlili boshlanadi.\n\n"
-        "1/2 — asosiy tarkibingizning tiniq skrinshotini yuboring.\n"
-        "Bekor qilish: /cancel"
-    )
-    return ANALYSIS_MAIN
-
-
-async def analysis_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.photo:
-        await update.message.reply_text("Asosiy tarkib skrinshotini rasm shaklida yuboring.")
-        return ANALYSIS_MAIN
-    context.user_data["analysis_main_photo"] = update.message.photo[-1].file_id
-    await update.message.reply_text("✅ Asosiy tarkib qabul qilindi.\n\n2/2 — zaxira futbolchilari skrinshotini yuboring.")
-    return ANALYSIS_BENCH
-
-async def analysis_bench_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.photo:
-        await update.message.reply_text("Zaxira futbolchilari skrinshotini rasm shaklida yuboring.")
-        return ANALYSIS_BENCH
-
-    if not DEEPSEEK_API_KEY:
-        await update.message.reply_text("AI tahlili sozlanmagan: DEEPSEEK_API_KEY mavjud emas.")
-        return ConversationHandler.END
-
-    context.user_data["analysis_bench_photo"] = update.message.photo[-1].file_id
-    await update.message.reply_text("🧠 Ikkala rasmni AI tahlil qilmoqda. Biroz kuting...")
-
-    try:
-        import asyncio
-
-        image_urls = []
-        for key in ("analysis_main_photo", "analysis_bench_photo"):
-            file_id = context.user_data.get(key)
-            if not file_id:
-                await update.message.reply_text(
-                    "Rasmlardan biri topilmadi. /cancel buyrug‘i bilan qayta boshlang."
-                )
-                return ConversationHandler.END
-
-            tg_file = await context.bot.get_file(file_id)
-            image_bytes = bytes(await tg_file.download_as_bytearray())
-            encoded = base64.b64encode(image_bytes).decode("ascii")
-            image_urls.append("data:image/jpeg;base64," + encoded)
-
-        # AI avval rasmlardagi futbolchi nomlarini aniqlaydi.
-        identify_payload = {
-            "model": VISION_MODEL,
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text":
-                     "Ikki eFootball tarkib rasmini ko'rib, aniq o'qiy olgan "
-                     "futbolchi ismlarini JSON ro'yxat qilib qaytaring. "
-                     'Faqat JSON formatida javob bering: { "players": ["Player Name"] }. '
-                     "Ism noaniq bo'lsa, uni ro'yxatga kiritmang."},
-                    {"type": "image_url", "image_url":
-                     {"url": image_urls[0], "detail": "high"}},
-                    {"type": "image_url", "image_url":
-                     {"url": image_urls[1], "detail": "high"}},
-                ],
-            }],
-            "max_tokens": 500,
-            "thinking": {"type": "disabled"},
-        }
-
-        def identify_api():
-            req = urllib.request.Request(
-                "https://api.deepseek.com/chat/completions",
-                data=json.dumps(identify_payload).encode("utf-8"),
-                headers={
-                    "Authorization": "Bearer " + DEEPSEEK_API_KEY,
-                    "Content-Type": "application/json",
-                },
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=120) as response:
-                return json.loads(response.read().decode("utf-8"))
-
-        import json as json_module
-        import re as re_module
-
-        player_names = []
-        try:
-            identified = await asyncio.to_thread(identify_api)
-            raw_names = identified["choices"][0]["message"]["content"]
-            raw_names = re_module.sub(
-                r"^```(?:json)?|```$", "", raw_names.strip(),
-                flags=re_module.I | re_module.M
-            ).strip()
-            parsed_names = json_module.loads(raw_names)
-            player_names = parsed_names.get("players", [])[:30]
-        except Exception:
-            log.exception("Rasmdagi futbolchi nomlarini aniqlashda xato")
-
-        efhub_players = []
-        for player_name in player_names:
-            try:
-                matches = await asyncio.to_thread(search_players, player_name)
-                if matches:
-                    # Faqat ismga mos topilgan karta ma'lumotlarini yuboramiz.
-                    efhub_players.extend(matches)
-            except Exception:
-                log.exception("eFHUB qidiruvi xatosi: %s", player_name)
-
-        efhub_context = ""
-        if efhub_players:
-            efhub_context = (
-                "\n\neFHUB FUTBOLCHI MA’LUMOTLARI "
-                "(topilgan kartalar; ism va kartani rasmlar bilan solishtiring):\n"
-                + json.dumps(efhub_players, ensure_ascii=False)
-                + "\nUshbu statistikalar va ko'nikmalarni tahlilda hisobga oling. "
-                "Agar kartaning aynan shu versiyasi rasmdagi karta ekaniga ishonch "
-                "bo'lmasa, moslik tasdiqlanmaganini ayting."
-            )
-
-        prompt = (
-            "Siz eFootball bo‘yicha tajribali taktika murabbiyisiz. "
-            "Birinchi rasm asosiy tarkib, ikkinchisi zaxira. "
-            "Maqsad futbolchilarni sanash emas, eng samarali taktika va tarkibni tavsiya qilish. "
-            "Javobni qisqa, aniq va ravon o‘zbek tilida yozing. "
-            "Ism noaniq bo‘lsa, ismni taxmin qilmang; pozitsiya va ko‘rinadigan belgilar asosida tahlilni davom ettiring. "
-            "Rasmda ko‘rinmagan reyting, menejer, o‘yin uslubi yoki statistikani uydirmang. "
-            "eFHUB kartasi aynan rasmga mosligi tasdiqlanmasa, uning statistikalarini fakt sifatida ishlatmang. "
-            "Playing Style va Skills tavsiyani asoslash uchun kerak; futbolchi haqida uzun ma’lumotnoma tuzmang. "
-            "Pozitsiyaga mos bo‘lmagan o‘yin uslubini tavsiya qilmang. "
-            "Menejer yoki uning taktikasi rasmda ko‘rinmasa va ishonchli ma’lumot bo‘lmasa, shartli tavsiya bering. "
-            "Quyidagi 5 bo‘limdan foydalaning:\n"
-            "⚽ 1. TAVSIYA ETILGAN SXEMA VA MENEJER\n"
-            "Eng mos sxemani, o‘yin uslubini va tanlov sababini ayting. "
-            "Menejer nomi noma’lum bo‘lsa, uydirmang.\n"
-            "🔄 2. TARKIBDAGI O‘ZGARISHLAR\n"
-            "Kimni qaysi pozitsiyaga o‘tkazish yoki kimni zaxiradan tushirishni aniq ayting. "
-            "Har bir tavsiyani karta mosligi tasdiqlangan ma’lumot yoki rasmda ko‘rinadigan dalil bilan asoslang.\n"
-            "💪 3. KUCHLI TOMONLAR\n"
-            "Tarkibning hujum, yarim himoya va himoyadagi afzalliklarini qisqa baholang.\n"
-            "⚠️ 4. KAMCHILIKLAR\n"
-            "Taktik muammolarni va raqib foydalanishi mumkin bo‘lgan bo‘shliqlarni ko‘rsating.\n"
-            "🎯 5. ENG MUHIM 3 TA TAVSIYA\n"
-            "Ustuvorlik bo‘yicha uchta amaliy o‘zgarish bering. "
-            "Noaniq ma’lumotni fakt deb ko‘rsatmang; kerak bo‘lsa, cheklovni ochiq ayting."
-        )
-
-        prompt += efhub_context
-
-        payload = {
-            "model": VISION_MODEL,
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": image_urls[0], "detail": "high"}},
-                    {"type": "image_url", "image_url": {"url": image_urls[1], "detail": "high"}},
-                ],
-            }],
-            "max_tokens": 1200,
-            "thinking": {"type": "disabled"},
-        }
-
-        request = urllib.request.Request(
-            "https://api.deepseek.com/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": "Bearer " + DEEPSEEK_API_KEY,
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-
-        def call_api():
-            with urllib.request.urlopen(request, timeout=120) as response:
-                return json.loads(response.read().decode("utf-8"))
-
-        result = await asyncio.to_thread(call_api)
-        choices = result.get("choices") or []
-        if not choices:
-            raise ValueError("AI javobida natija topilmadi.")
-
-        analysis = (choices[0].get("message", {}).get("content") or "").strip()
-        if not analysis:
-            raise ValueError("AI bo'sh javob qaytardi.")
-
-        if context.user_data.get("analysis_is_free"):
-            with db() as conn:
-                conn.execute(
-                    "UPDATE user_subscriptions SET free_analysis_used = 1 WHERE user_id = ?",
-                    (update.effective_user.id,),
-                )
-            context.user_data["analysis_is_free"] = False
-
-        # Telegram xabar limiti uchun javobni bo'lib yuborish.
-        for i in range(0, len(analysis), 3900):
-            await update.message.reply_text(
-                ("📊 eFootball akkaunt tahlili\n\n" if i == 0 else "") + analysis[i:i + 3900]
-            )
-
-    except urllib.error.HTTPError as exc:
-        details = exc.read().decode("utf-8", errors="replace")[:500]
-        log.exception("AI tahlil API HTTP xatosi")
-        await update.message.reply_text(
-            f"⚠️ AI xizmatidan xato qaytdi (HTTP {exc.code}). "
-            "Model nomi yoki API imkoniyatlarini tekshirish kerak.\n{details}"
-        )
-    except Exception:
-        log.exception("Akkaunt AI tahlilida xato")
-        await update.message.reply_text(
-            "⚠️ AI tahlilini yakunlay olmadim. API modeli rasm tahlilini qo'llashini "
-            "va server sozlamalarini tekshirish kerak. Bepul tahlil hisobingiz sarflanmadi."
-        )
-
-    return ConversationHandler.END
 
 
 
@@ -755,11 +509,6 @@ async def bahola(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return ConversationHandler.END
 
-        conn.execute(
-            "INSERT INTO price_request_limits (user_id, last_request_at) VALUES (?, ?) "
-            "ON CONFLICT(user_id) DO UPDATE SET last_request_at=excluded.last_request_at",
-            (user_id, now.isoformat()),
-        )
 
     context.user_data.clear()
     await update.message.reply_text(
@@ -1002,6 +751,13 @@ async def coins_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "bot narxni to‘qib chiqarmaydi."
         )
 
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO price_request_limits (user_id, last_request_at) VALUES (?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET last_request_at=excluded.last_request_at",
+            (update.effective_user.id, datetime.now(timezone.utc).isoformat()),
+        )
+
     await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
     await update.message.reply_text(
         "Yana baholash uchun /bahola buyrug‘ini bosing."
@@ -1062,7 +818,6 @@ def main():
     app.add_handler(CallbackQueryHandler(begin_payment, pattern="^begin_payment$"))
     app.add_handler(CallbackQueryHandler(review_payment, pattern="^pay_(approve|reject):[0-9]+$"))
     app.add_handler(MessageHandler(filters.PHOTO, payment_receipt), group=1)
-    app.add_handler(ConversationHandler(entry_points=[MessageHandler(filters.TEXT & filters.Regex("^🔍 Akkauntni tahlil qilish$"), analysis_start)], states={ANALYSIS_MAIN: [MessageHandler(filters.PHOTO, analysis_main_photo), MessageHandler(filters.TEXT & ~filters.COMMAND, analysis_main_photo)], ANALYSIS_BENCH: [MessageHandler(filters.PHOTO, analysis_bench_photo), MessageHandler(filters.TEXT & ~filters.COMMAND, analysis_bench_photo)]}, fallbacks=[CommandHandler("cancel", cancel)], allow_reentry=True))
     app.add_handler(MessageHandler(
         filters.TEXT & filters.Regex("^💰 Akkaunt narxini aniqlash$"),
         bahola
