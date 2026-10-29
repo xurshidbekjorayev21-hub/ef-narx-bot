@@ -68,6 +68,30 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_subscriptions (
+                user_id INTEGER PRIMARY KEY,
+                expires_at TIMESTAMP,
+                free_analysis_used INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS payment_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT "pending",
+                receipt_file_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                reviewed_at TIMESTAMP,
+                reviewed_by INTEGER
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS price_request_limits (
+                user_id INTEGER PRIMARY KEY,
+                last_request_at TEXT NOT NULL
+            )
+        """)
         # Upgrade an older database without losing existing records.
         cols = {r[1] for r in conn.execute("PRAGMA table_info(valuations)").fetchall()}
         if "team_strength" not in cols:
@@ -261,12 +285,162 @@ async def check_subscription_callback(update: Update, context: ContextTypes.DEFA
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await subscription_check(update, context):
         return
+
+    keyboard = ReplyKeyboardMarkup(
+        [
+            ["💰 Akkaunt narxini aniqlash"],
+            ["🔍 Akkauntni tahlil qilish"],
+            ["⭐ Obuna sotib olish"],
+        ],
+        resize_keyboard=True,
+    )
+
     await update.message.reply_text(
-        "⚽ Assalomu alaykum! Bu — eF Narx Bot.\n\n"
-        "Akkauntni baholash uchun /bahola buyrug‘ini bosing. Avval eFootball jamoangizning "
-        "o‘yin ichidagi skrinshotini yuborish so‘raladi. Boshqa rasmlar qabul qilinmaydi.\n\n"
-        "Narx faqat yetarli o‘xshash ma’lumot bo‘lsa ko‘rsatiladi; bu kafolatlangan sotuv narxi emas.",
-        reply_markup=ReplyKeyboardRemove(),
+        "⚽ Assalomu alaykum! Bu — eF Narx Bot.\\n\\n"
+        "💰 Akkaunt narxini aniqlash — bepul.\\n"
+        "🔍 Akkauntni tahlil qilish — birinchi marta bepul, keyingi tahlillar obuna orqali.\\n"
+        "⭐ Obuna — 14 kun uchun 10 000 so‘m.\\n\\n"
+        "Quyidagi tugmalardan birini tanlang.",
+        reply_markup=keyboard,
+    )
+
+
+
+ANALYSIS_MAIN, ANALYSIS_BENCH = 100, 101
+
+async def analysis_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    now = datetime.now(timezone.utc)
+    with db() as conn:
+        row = conn.execute(
+            "SELECT expires_at, free_analysis_used FROM user_subscriptions WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if row:
+            expires = datetime.fromisoformat(row["expires_at"]) if row["expires_at"] else None
+            if expires and expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            subscribed = bool(expires and expires > now)
+            free_used = bool(row["free_analysis_used"])
+        else:
+            subscribed = False
+            free_used = False
+            conn.execute(
+                "INSERT INTO user_subscriptions (user_id, free_analysis_used) VALUES (?, 0)",
+                (user_id,),
+            )
+        if not subscribed and free_used:
+            await update.message.reply_text(
+                "⭐ Bepul tahlilingiz ishlatilgan. Davom etish uchun 14 kunlik obunani sotib oling."
+            )
+            return ConversationHandler.END
+    context.user_data["analysis_is_free"] = not subscribed and not free_used
+    context.user_data.pop("analysis_main_photo", None)
+    context.user_data.pop("analysis_bench_photo", None)
+    await update.message.reply_text(
+        "🔍 Akkaunt tahlili boshlanadi.\n\n"
+        "1/2 — asosiy tarkibingizning tiniq skrinshotini yuboring.\n"
+        "Bekor qilish: /cancel"
+    )
+    return ANALYSIS_MAIN
+
+
+async def analysis_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.photo:
+        await update.message.reply_text("Asosiy tarkib skrinshotini rasm shaklida yuboring.")
+        return ANALYSIS_MAIN
+    context.user_data["analysis_main_photo"] = update.message.photo[-1].file_id
+    await update.message.reply_text("✅ Asosiy tarkib qabul qilindi.\n\n2/2 — zaxira futbolchilari skrinshotini yuboring.")
+    return ANALYSIS_BENCH
+
+async def analysis_bench_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.photo:
+        await update.message.reply_text("Zaxira futbolchilari skrinshotini rasm shaklida yuboring.")
+        return ANALYSIS_BENCH
+    context.user_data["analysis_bench_photo"] = update.message.photo[-1].file_id
+
+    if context.user_data.get("analysis_is_free"):
+        with db() as conn:
+            conn.execute(
+                "UPDATE user_subscriptions SET free_analysis_used = 1 WHERE user_id = ?",
+                (update.effective_user.id,),
+            )
+        context.user_data["analysis_is_free"] = False
+
+    await update.message.reply_text(
+        "✅ Ikkala rasm qabul qilindi. Hozircha bot rasmlarni qabul qiladi, "
+        "lekin futbolchi kartalarini aniqlash va taktika tavsiyalari berish uchun "
+        "AI tahlil moduli hali ulanmagan."
+    )
+    return ConversationHandler.END
+
+
+
+async def subscription_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 To‘lov qilish", callback_data="begin_payment")]
+    ])
+    await update.message.reply_text(
+        "⭐ eF Narx Bot obunasi\\n\\n"
+        "💰 Narxi: 10 000 so‘m\\n"
+        "🗓 Muddati: 14 kun\\n\\n"
+        "To‘lovdan so‘ng chekni botga yuboring. Administrator pul tushganini bank ilovasidan tekshiradi. "
+        "Chekning o‘zi obunani faollashtirmaydi.",
+        reply_markup=keyboard,
+    )
+
+
+async def begin_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    context.user_data["awaiting_payment_receipt"] = True
+
+    await query.message.reply_text(
+        "⭐ eF Narx Bot — obuna to‘lovi\\n\\n"
+        "💰 Summa: 10 000 so‘m\\n"
+        "🗓 Muddat: 14 kun\\n\\n"
+        "💳 Karta: 9860350147639370\\n"
+        "👤 Karta egasi: Xurshidbek Jo‘rayev\\n"
+        "🏦 Bank: TBC Bank (Humo)\\n\\n"
+        "To‘lovni amalga oshirgach, chek rasmini shu chatga yuboring. "
+        "Administrator pul tushganini bank ilovasidan tekshiradi. "
+        "Chek yuborishning o‘zi obunani faollashtirmaydi. "
+        "Soxta yoki boshqa to‘lovga tegishli cheklar rad etiladi."
+    )
+
+
+async def payment_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not context.user_data.get("awaiting_payment_receipt"):
+        return
+
+    if not update.message.photo:
+        await update.message.reply_text("Iltimos, to‘lov chekini rasm shaklida yuboring.")
+        return
+
+    receipt_id = update.message.photo[-1].file_id
+    with db() as conn:
+        cur = conn.execute(
+            "INSERT INTO payment_requests (user_id, status, receipt_file_id) VALUES (?, ?, ?)",
+            (user.id, "pending", receipt_id),
+        )
+        request_id = cur.lastrowid
+
+    context.user_data["awaiting_payment_receipt"] = False
+
+    await context.bot.send_photo(
+        chat_id=ADMIN_ID,
+        photo=receipt_id,
+        caption=f"💳 Yangi to‘lov cheki\\nSo‘rov: {request_id}\\nFoydalanuvchi ID: {user.id}\\n"
+                "Bank ilovasidan haqiqiy tushumni tekshiring. Chekning o‘zi obunani faollashtirmaydi.",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"pay_approve:{request_id}"),
+            InlineKeyboardButton("❌ Rad etish", callback_data=f"pay_reject:{request_id}"),
+        ]]),
+    )
+    await update.message.reply_text(
+        "✅ Chek administratorga yuborildi. Obuna faqat haqiqiy to‘lov bankda tekshirilgach faollashadi."
     )
 
 
@@ -294,9 +468,39 @@ async def narx_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def bahola(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    now = datetime.now(timezone.utc)
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT last_request_at FROM price_request_limits WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+
+        if row:
+            last = datetime.fromisoformat(row["last_request_at"])
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            elapsed = (now - last).total_seconds()
+            remaining = 7200 - elapsed
+
+            if remaining > 0:
+                minutes = int(remaining // 60) + 1
+                await update.message.reply_text(
+                    f"⏳ Siz yaqinda akkaunt narxini aniqlatgansiz. "
+                    f"Iltimos, {minutes} daqiqadan keyin qayta urinib ko‘ring."
+                )
+                return ConversationHandler.END
+
+        conn.execute(
+            "INSERT INTO price_request_limits (user_id, last_request_at) VALUES (?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET last_request_at=excluded.last_request_at",
+            (user_id, now.isoformat()),
+        )
+
     context.user_data.clear()
     await update.message.reply_text(
-        "📸 Avval eFootball o‘yinidagi jamoangiz/akkauntingiz ekranining skrinshotini yuboring.\n\n"
+        "📸 Avval eFootball o‘yinidagi jamoangiz/akkauntingiz ekranining skrinshotini yuboring.\\n\\n"
         "Boshqa o‘yin, oddiy surat yoki tushunarsiz rasm qabul qilinmaydi. Rasm tekshiruvi uchun "
         "bir necha soniya ketishi mumkin."
     )
@@ -562,6 +766,15 @@ def main():
     )
     app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="^check_subscription$"))
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & filters.Regex("^⭐ Obuna sotib olish$"), subscription_menu))
+    app.add_handler(CallbackQueryHandler(begin_payment, pattern="^begin_payment$"))
+    app.add_handler(CallbackQueryHandler(review_payment, pattern="^pay_(approve|reject):[0-9]+$"))
+    app.add_handler(MessageHandler(filters.PHOTO, payment_receipt))
+    app.add_handler(ConversationHandler(entry_points=[MessageHandler(filters.TEXT & filters.Regex("^🔍 Akkauntni tahlil qilish$"), analysis_start)], states={ANALYSIS_MAIN: [MessageHandler(filters.PHOTO, analysis_main_photo), MessageHandler(filters.TEXT & ~filters.COMMAND, analysis_main_photo)], ANALYSIS_BENCH: [MessageHandler(filters.PHOTO, analysis_bench_photo), MessageHandler(filters.TEXT & ~filters.COMMAND, analysis_bench_photo)]}, fallbacks=[CommandHandler("cancel", cancel)], allow_reentry=True))
+    app.add_handler(MessageHandler(
+        filters.TEXT & filters.Regex("^💰 Akkaunt narxini aniqlash$"),
+        bahola
+    ))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("narx", narx_cmd))
     app.add_handler(CommandHandler("addsale", addsale))
