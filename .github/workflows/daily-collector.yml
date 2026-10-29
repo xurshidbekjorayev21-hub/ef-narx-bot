@@ -29,8 +29,7 @@ jobs:
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION_B64: ${{ secrets.TG_SESSION_B64 }}
         run: |
-          echo "$TG_SESSION_B64" | base64 -d > ef_narx_reader.session
-          python channel_collector.py
+                    python channel_collector.py
 
       - name: Yangi narxlarni saqlash
         run: |

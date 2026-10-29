@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from telethon import TelegramClient
+from telethon.sessions import StringSession
+from telethon.sessions import StringSession
 
 CHANNELS = [
     os.getenv("CHANNEL", "efootball_shop"),
