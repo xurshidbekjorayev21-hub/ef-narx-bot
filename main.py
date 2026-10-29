@@ -296,7 +296,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await update.message.reply_text(
-        "⚽ Assalomu alaykum! Bu — eF Narx Bot.\\n\\n"
+        "⚽ Assalomu alaykum! Bu — eF Narx Bot.\n\n"
         "💰 Akkaunt narxini aniqlash — bepul.\\n"
         "🔍 Akkauntni tahlil qilish — birinchi marta bepul, keyingi tahlillar obuna orqali.\\n"
         "⭐ Obuna — 14 kun uchun 10 000 so‘m.\\n\\n"
@@ -357,21 +357,110 @@ async def analysis_bench_photo(update: Update, context: ContextTypes.DEFAULT_TYP
     if not update.message.photo:
         await update.message.reply_text("Zaxira futbolchilari skrinshotini rasm shaklida yuboring.")
         return ANALYSIS_BENCH
+
+    if not DEEPSEEK_API_KEY:
+        await update.message.reply_text("AI tahlili sozlanmagan: DEEPSEEK_API_KEY mavjud emas.")
+        return ConversationHandler.END
+
     context.user_data["analysis_bench_photo"] = update.message.photo[-1].file_id
+    await update.message.reply_text("🧠 Ikkala rasmni AI tahlil qilmoqda. Biroz kuting...")
 
-    if context.user_data.get("analysis_is_free"):
-        with db() as conn:
-            conn.execute(
-                "UPDATE user_subscriptions SET free_analysis_used = 1 WHERE user_id = ?",
-                (update.effective_user.id,),
+    try:
+        import asyncio
+
+        image_urls = []
+        for key in ("analysis_main_photo", "analysis_bench_photo"):
+            file_id = context.user_data.get(key)
+            if not file_id:
+                await update.message.reply_text(
+                    "Rasmlardan biri topilmadi. /cancel buyrug‘i bilan qayta boshlang."
+                )
+                return ConversationHandler.END
+
+            tg_file = await context.bot.get_file(file_id)
+            image_bytes = bytes(await tg_file.download_as_bytearray())
+            encoded = base64.b64encode(image_bytes).decode("ascii")
+            image_urls.append("data:image/jpeg;base64," + encoded)
+
+        prompt = (
+            "Siz eFootball akkauntlari bo'yicha tajribali tahlilchisiz. "
+            "Quyidagi ikki rasm: birinchi rasm asosiy tarkib, ikkinchisi zaxira. "
+            "Faqat rasmlarda aniq ko'rinadigan ma'lumotlardan foydalaning; "
+            "o'qilmaydigan futbolchi nomlari yoki kartalar haqida taxminni fakt sifatida bermang. "
+            "O'zbek tilida quyidagi bo'limlar bilan tahlil yozing: "
+            "1) ko'rinadigan futbolchilar va maxsus kartalar; "
+            "2) tarkibning kuchli tomonlari; "
+            "3) zaif tomonlar va ehtimoliy bo'shliqlar; "
+            "4) taktika va joylashuv bo'yicha tavsiyalar; "
+            "5) keyingi yaxshilash uchun ustuvor qadamlar. "
+            "Rasmda ko'rinmagan ma'lumotlarni aniqlab bo'lmasligini ochiq ayting. "
+            "Akkauntning aniq bozor narxini faqat shu rasmlarga qarab kafolatlamang."
+        )
+
+        payload = {
+            "model": VISION_MODEL,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": image_urls[0], "detail": "high"}},
+                    {"type": "image_url", "image_url": {"url": image_urls[1], "detail": "high"}},
+                ],
+            }],
+            "max_tokens": 1200,
+        }
+
+        request = urllib.request.Request(
+            "https://api.deepseek.com/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": "Bearer " + DEEPSEEK_API_KEY,
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        def call_api():
+            with urllib.request.urlopen(request, timeout=120) as response:
+                return json.loads(response.read().decode("utf-8"))
+
+        result = await asyncio.to_thread(call_api)
+        choices = result.get("choices") or []
+        if not choices:
+            raise ValueError("AI javobida natija topilmadi.")
+
+        analysis = (choices[0].get("message", {}).get("content") or "").strip()
+        if not analysis:
+            raise ValueError("AI bo'sh javob qaytardi.")
+
+        if context.user_data.get("analysis_is_free"):
+            with db() as conn:
+                conn.execute(
+                    "UPDATE user_subscriptions SET free_analysis_used = 1 WHERE user_id = ?",
+                    (update.effective_user.id,),
+                )
+            context.user_data["analysis_is_free"] = False
+
+        # Telegram xabar limiti uchun javobni bo'lib yuborish.
+        for i in range(0, len(analysis), 3900):
+            await update.message.reply_text(
+                ("📊 eFootball akkaunt tahlili\n\n" if i == 0 else "") + analysis[i:i + 3900]
             )
-        context.user_data["analysis_is_free"] = False
 
-    await update.message.reply_text(
-        "✅ Ikkala rasm qabul qilindi. Hozircha bot rasmlarni qabul qiladi, "
-        "lekin futbolchi kartalarini aniqlash va taktika tavsiyalari berish uchun "
-        "AI tahlil moduli hali ulanmagan."
-    )
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")[:500]
+        log.exception("AI tahlil API HTTP xatosi")
+        await update.message.reply_text(
+            f"⚠️ AI xizmatidan xato qaytdi (HTTP {exc.code}). "
+            "Model nomi yoki API imkoniyatlarini tekshirish kerak.\n{details}"
+        )
+    except Exception:
+        log.exception("Akkaunt AI tahlilida xato")
+        await update.message.reply_text(
+            "⚠️ AI tahlilini yakunlay olmadim. API modeli rasm tahlilini qo'llashini "
+            "va server sozlamalarini tekshirish kerak. Bepul tahlil hisobingiz sarflanmadi."
+        )
+
     return ConversationHandler.END
 
 
@@ -560,7 +649,7 @@ async def bahola(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data.clear()
     await update.message.reply_text(
-        "📸 Avval eFootball o‘yinidagi jamoangiz/akkauntingiz ekranining skrinshotini yuboring.\\n\\n"
+        "📸 Avval eFootball o‘yinidagi jamoangiz/akkauntingiz ekranining skrinshotini yuboring.\n\n"
         "Boshqa o‘yin, oddiy surat yoki tushunarsiz rasm qabul qilinmaydi. Rasm tekshiruvi uchun "
         "bir necha soniya ketishi mumkin."
     )
@@ -829,7 +918,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & filters.Regex("^⭐ Obuna sotib olish$"), subscription_menu))
     app.add_handler(CallbackQueryHandler(begin_payment, pattern="^begin_payment$"))
     app.add_handler(CallbackQueryHandler(review_payment, pattern="^pay_(approve|reject):[0-9]+$"))
-    app.add_handler(MessageHandler(filters.PHOTO, payment_receipt))
+    app.add_handler(MessageHandler(filters.PHOTO, payment_receipt), group=1)
     app.add_handler(ConversationHandler(entry_points=[MessageHandler(filters.TEXT & filters.Regex("^🔍 Akkauntni tahlil qilish$"), analysis_start)], states={ANALYSIS_MAIN: [MessageHandler(filters.PHOTO, analysis_main_photo), MessageHandler(filters.TEXT & ~filters.COMMAND, analysis_main_photo)], ANALYSIS_BENCH: [MessageHandler(filters.PHOTO, analysis_bench_photo), MessageHandler(filters.TEXT & ~filters.COMMAND, analysis_bench_photo)]}, fallbacks=[CommandHandler("cancel", cancel)], allow_reentry=True))
     app.add_handler(MessageHandler(
         filters.TEXT & filters.Regex("^💰 Akkaunt narxini aniqlash$"),
