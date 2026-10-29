@@ -463,10 +463,10 @@ async def coins_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🔴 Tez sotish: {low:,} so‘m\n"
             f"🟡 O‘rtacha: {mid:,} so‘m\n"
             f"🟢 Yuqoriroq: {high:,} so‘m\n\n"
-            f"Hisoblash asosi: {basis}. Bu kafolatlangan sotuv narxi emas; e’lon narxlari haqiqiy bitim narxidan farq qilishi mumkin."
+            "🇺🇿 Bot O‘zbekiston eFootball akkauntlari bozorini tahlil qilgan holda narx belgilaydi. Narxlar o‘ylab topilmaydi!"
         ).replace(",", " ")
         if basis == "so‘nggi 30 kunlik e’lonlar":
-            text += f"\nTaqqoslash uchun mos e’lonlar: {comparable_count} ta."
+
     else:
         text += (
             "⚠️ Hozircha ishonchli narx chiqarish uchun o‘xshash ma’lumot yetarli emas.\n"
