@@ -10,7 +10,7 @@ from statistics import median
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, ConversationHandler,
+    Application, CommandHandler, MessageHandler, ConversationHandler, CallbackQueryHandler, CallbackQueryHandler,
     ContextTypes, filters
 )
 
