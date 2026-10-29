@@ -497,15 +497,15 @@ async def coins_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if prices:
         low, mid, high = prices
         text += (
-            "💵 TAXMINIY NARX ORALIG‘I (UZS):\\n"
-            f"🔴 Tez sotish: {low:,} so‘m\\n"
-            f"🟡 O‘rtacha: {mid:,} so‘m\\n"
-            f"🟢 Yuqoriroq: {high:,} so‘m\\n\\n"
+            "💵 TAXMINIY NARX ORALIG‘I (UZS):\n"
+            f"🔴 Tez sotish: {low:,} so‘m\n"
+            f"🟡 O‘rtacha: {mid:,} so‘m\n"
+            f"🟢 Yuqoriroq: {high:,} so‘m\n\n"
             "🇺🇿 Bot O‘zbekiston eFootball akkauntlari bozorini tahlil qilgan holda narx belgilaydi. Narxlar o‘ylab topilmaydi!"
         ).replace(",", " ")
     else:
         text += (
-            "⚠️ Hozircha ishonchli narx chiqarish uchun o‘xshash ma’lumot yetarli emas.\\n"
+            "⚠️ Hozircha ishonchli narx chiqarish uchun o‘xshash ma’lumot yetarli emas.\n"
             "Rasmda jamoa kuchi aniq ko‘rinmasa yoki o‘xshash e’lonlar kam bo‘lsa, bot narxni to‘qib chiqarmaydi."
         )
     await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
