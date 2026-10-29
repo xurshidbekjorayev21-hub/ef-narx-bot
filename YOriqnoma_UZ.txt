@@ -1,0 +1,37 @@
+eF NARX BOT — kanal e’lonlarini yig‘ish prototipi
+=================================================
+
+NIMA QILADI
+- @efootball_shop kanalidagi oxirgi 30 kunlik xabarlarni o‘qiydi.
+- Matnda ko‘rsatilgan narx, Coin soni va matnda yozilgan jamoa kuchini ajratishga urinadi.
+- Natijani listings.jsonl fayliga saqlaydi.
+- Bu hozircha yig‘uvchi prototip; botga narxlarni avtomatik kiritmaydi.
+
+MUHIM
+- Telegram API tarixni o‘qishi uchun Telegram foydalanuvchi akkaunti bilan avtorizatsiya talab qilinadi.
+- API_ID va API_HASH ni https://my.telegram.org dan o‘zingiz oling.
+- Telefon raqami va Telegram tasdiqlash kodi faqat o‘z qurilmangizdagi terminalga kiritiladi.
+- Hech kimga login kodi, parol yoki yaratilgan .session faylini yubormang.
+- Kanalga kirish huquqingiz bo‘lishi kerak.
+- E’lon matnida bo‘lmagan jamoa kuchi rasmdan hozircha o‘qilmaydi.
+- E’lon narxi haqiqiy sotuv narxi degani emas. Natijalarni tekshirmasdan avtomatik baholashda ishlatmang.
+
+ISHGA TUSHIRISH (kompyuterda)
+1. Python 3.10+ o‘rnating.
+2. Ushbu papkada terminal oching.
+3. Kutubxonani o‘rnating:
+   pip install -r requirements-collector.txt
+4. Muhit o‘zgaruvchilarini sozlang:
+   Windows PowerShell:
+     $env:TG_API_ID="SIZNING_API_ID"
+     $env:TG_API_HASH="SIZNING_API_HASH"
+   Linux/macOS:
+     export TG_API_ID="SIZNING_API_ID"
+     export TG_API_HASH="SIZNING_API_HASH"
+5. Ishga tushiring:
+   python channel_collector.py
+6. Birinchi marta Telegram telefon raqami va tasdiqlash kodini so‘raydi. Bularni faqat o‘z terminalingizga kiriting.
+7. Natija listings.jsonl faylida paydo bo‘ladi.
+
+KEYINGI BOSQICH
+Yig‘ilgan natijalarni tekshirib, main.py dagi narxlar bazasiga xavfsiz ulash va 30 kunlik sana filtri qo‘shish kerak. Bu prototip hozirgi Fly.io botingizni o‘zgartirmaydi.

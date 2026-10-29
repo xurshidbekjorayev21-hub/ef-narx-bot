@@ -1,0 +1,9 @@
+.env
+*.session
+*.db
+__pycache__/
+*.pyc
+*_backup*
+*_before_*
+main_current_backup.py
+listings*.jsonl

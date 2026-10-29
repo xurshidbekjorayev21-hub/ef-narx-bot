@@ -1,0 +1,32 @@
+eF NARX BOT V2 — O‘RNATISH YO‘RIQNOMASI
+
+NIMA QO‘SHILDI
+1. /bahola boshlanganda bot avval eFootball o‘yinidan skrinshot so‘raydi.
+2. Vision AI rasm eFootball o‘yiniga o‘xshashligini tekshiradi; boshqa yoki noaniq rasmlarni rad etadi.
+3. listings.jsonl faylidan har bir baholash vaqtida faqat oxirgi 30 kunlik yozuvlar olinadi.
+4. Narxlar e’lon qilingan narxlar bo‘yicha taxmin qilinadi; ular haqiqiy sotuv narxi deb ko‘rsatilmaydi.
+
+KERAKLI MUHIT O‘ZGARUVCHILARI
+BOT_TOKEN       — BotFather bergan Telegram bot tokeni
+OPENAI_API_KEY  — OpenAI API kaliti (rasm tekshiruvi uchun; API ishlatish alohida haq to‘lanadigan bo‘lishi mumkin)
+ADMIN_ID        — ixtiyoriy, administratorning Telegram user ID raqami
+
+TERMUX ICHIDA
+1. main.py va requirements.txt fayllarini ~/ef_narx_paket/ ichiga qo‘ying.
+2. listings.jsonl ham aynan shu papkada bo‘lsin.
+3. Kutubxonalarni o‘rnating:
+   cd ~/ef_narx_paket
+   pip install -r requirements.txt
+4. Kalitlarni terminalda vaqtincha o‘rnating (o‘zingizning haqiqiy qiymatlaringizni yozing; chatga yubormang):
+   export BOT_TOKEN='BOTFATHER_TOKENINGIZ'
+   export OPENAI_API_KEY='OPENAI_API_KALITINGIZ'
+   export ADMIN_ID='TELEGRAM_USER_ID'
+5. Botni ishga tushiring:
+   python main.py
+
+MUHIM
+- API kalitlarini skrinshot yoki chatda ko‘rsatmang.
+- OpenAI API kaliti bo‘lmasa, bot rasmlarni AI orqali tekshira olmaydi.
+- AI ba’zan xato qilishi mumkin; noaniq rasmda bot qayta, aniqroq skrinshot so‘raydi.
+- Bot har bir narx hisobida listings.jsonl dagi sanalarni qayta tekshiradi va 30 kundan eski e’lonlarni hisobga olmaydi.
+- Kanal e’lonlaridagi narxlar so‘ralgan narxlar bo‘lishi mumkin, kafolatlangan bitim narxi emas.
