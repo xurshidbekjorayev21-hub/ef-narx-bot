@@ -145,5 +145,5 @@ def search_players(name):
         except Exception as exc:
             print(f"eFHUB karta yuklanmadi ({player_id}): {exc}")
 
-    return results
+    return results[:5]
 

@@ -455,36 +455,30 @@ async def analysis_bench_photo(update: Update, context: ContextTypes.DEFAULT_TYP
             )
 
         prompt = (
-            "Siz eFootball bo'yicha professional tarkib tahlilchisisiz. "
-            "Birinchi rasm asosiy tarkib, ikkinchi rasm zaxira. "
-            "Javobni faqat ravon, imloviy to'g'ri o'zbek tilida yozing. "
-            "Ortiqcha kirish so'zlari, takrorlar va umumiy gaplar yozmang. "
-            "Ko'rinmagan ism, reyting, karta turi, statistika yoki ko'nikmani uydirmang. "
-            "Rasmdagi reyting bilan eFHUB ma'lumotidagi reytingni aralashtirmang. "
-            "eFHUB ma'lumotlari boshqa karta bo'lishi mumkin bo'lsa, uni tasdiqlangan deb ko'rsatmang. "
-            "eFHUB ma'lumotida overall, position, playing_style, stats va skills bo'lsa, "
-            "mos kelgan futbolchi uchun ulardan foydalaning. "
-            "eFHUB qidiruvi natijasi bo'lmasa, bu ma'lumot mavjud emasligini ayting; "
-            "eFHUB ishlamagan bo'lsa, uning ma'lumotlari tekshirilmaganini ochiq yozing. "
-            "Natijani quyidagi aniq tuzilishda yozing:\n"
-            "⚽ 1. ASOSIY TARKIB\n"
-            "Ko'rinadigan futbolchilarni pozitsiyasi va rasmda ko'ringan reytingi bilan sanang. "
-            "Ism noaniq bo'lsa, 'ismi rasmda aniq o'qilmadi' deb yozing.\n"
-            "🪑 2. ZAXIRA\n"
-            "Faqat ko'rinadigan va ishonchli aniqlangan futbolchilarni sanang.\n"
-            "📊 3. eFHUB MA'LUMOTLARI\n"
-            "Mosligi tasdiqlangan kartalar uchun o'yin uslubi, muhim statistika va ko'nikmalarni yozing. "
-            "Rasm bilan mosligi tasdiqlanmagan kartalarni alohida belgilang.\n"
-            "💪 4. KUCHLI TOMONLAR\n"
-            "Faqat ko'ringan tarkib va tasdiqlangan statistikaga asoslaning.\n"
-            "⚠️ 5. KAMCHILIKLAR\n"
-            "Pozitsiya yoki statistika yetishmasa, taxmin qilmang.\n"
-            "🎮 6. TAKTIKA\n"
-            "Mos sxemani va pressing, himoya chizig'i hamda hujum uslubini qisqa asoslang. "
-            "Tarkibdan dalil bo'lmasa, tavsiyani shartli deb belgilang.\n"
-            "🎯 7. KEYINGI QADAM\n"
-            "Eng muhim 3 ta amaliy tavsiyani ustuvorlik bo'yicha bering. "
-            "Akkauntning bozor narxini rasmlarga qarab aniqlamang."
+            "Siz eFootball bo‘yicha tajribali taktika murabbiyisiz. "
+            "Birinchi rasm asosiy tarkib, ikkinchisi zaxira. "
+            "Maqsad futbolchilarni sanash emas, eng samarali taktika va tarkibni tavsiya qilish. "
+            "Javobni qisqa, aniq va ravon o‘zbek tilida yozing. "
+            "Ism noaniq bo‘lsa, ismni taxmin qilmang; pozitsiya va ko‘rinadigan belgilar asosida tahlilni davom ettiring. "
+            "Rasmda ko‘rinmagan reyting, menejer, o‘yin uslubi yoki statistikani uydirmang. "
+            "eFHUB kartasi aynan rasmga mosligi tasdiqlanmasa, uning statistikalarini fakt sifatida ishlatmang. "
+            "Playing Style va Skills tavsiyani asoslash uchun kerak; futbolchi haqida uzun ma’lumotnoma tuzmang. "
+            "Pozitsiyaga mos bo‘lmagan o‘yin uslubini tavsiya qilmang. "
+            "Menejer yoki uning taktikasi rasmda ko‘rinmasa va ishonchli ma’lumot bo‘lmasa, shartli tavsiya bering. "
+            "Quyidagi 5 bo‘limdan foydalaning:\n"
+            "⚽ 1. TAVSIYA ETILGAN SXEMA VA MENEJER\n"
+            "Eng mos sxemani, o‘yin uslubini va tanlov sababini ayting. "
+            "Menejer nomi noma’lum bo‘lsa, uydirmang.\n"
+            "🔄 2. TARKIBDAGI O‘ZGARISHLAR\n"
+            "Kimni qaysi pozitsiyaga o‘tkazish yoki kimni zaxiradan tushirishni aniq ayting. "
+            "Har bir tavsiyani karta mosligi tasdiqlangan ma’lumot yoki rasmda ko‘rinadigan dalil bilan asoslang.\n"
+            "💪 3. KUCHLI TOMONLAR\n"
+            "Tarkibning hujum, yarim himoya va himoyadagi afzalliklarini qisqa baholang.\n"
+            "⚠️ 4. KAMCHILIKLAR\n"
+            "Taktik muammolarni va raqib foydalanishi mumkin bo‘lgan bo‘shliqlarni ko‘rsating.\n"
+            "🎯 5. ENG MUHIM 3 TA TAVSIYA\n"
+            "Ustuvorlik bo‘yicha uchta amaliy o‘zgarish bering. "
+            "Noaniq ma’lumotni fakt deb ko‘rsatmang; kerak bo‘lsa, cheklovni ochiq ayting."
         )
 
         prompt += efhub_context
@@ -946,25 +940,50 @@ async def estimate_manual(platform, epic, bigtime, showtime):
 async def coins_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         n = int(update.message.text.strip().replace(" ", ""))
-        if not 0 <= n <= 1000000: raise ValueError
+        if not 0 <= n <= 1000000:
+            raise ValueError
     except ValueError:
-        await update.message.reply_text("Coin sonini 0–1 000 000 oralig‘ida kiriting.")
+        await update.message.reply_text(
+            "Coin sonini 0–1 000 000 oralig‘ida kiriting."
+        )
         return COINS
+
     d = context.user_data
     d["coins"] = n
-    with db() as conn:
-        conn.execute("""
-            INSERT INTO valuations
-            (user_id, platform, epic, bigtime, showtime, google_play, game_center, konami_id, minus_coins, coins, team_strength)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            update.effective_user.id, d["platform"], d["epic"], d["bigtime"], d["showtime"],
-            d["google_play"], d["game_center"], d["konami_id"], d["minus_coins"], d["coins"], d.get("team_strength")
-        ))
 
-    prices, recent_total, comparable_count = estimate_from_recent_listings(d.get("team_strength"), d["coins"])
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO valuations
+            (user_id, platform, epic, bigtime, showtime, google_play,
+             game_center, konami_id, minus_coins, coins, team_strength)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                update.effective_user.id,
+                d["platform"],
+                d["epic"],
+                d["bigtime"],
+                d["showtime"],
+                d["google_play"],
+                d["game_center"],
+                d["konami_id"],
+                d["minus_coins"],
+                d["coins"],
+                d.get("team_strength"),
+            ),
+        )
+
+    prices, recent_total, comparable_count = estimate_from_recent_listings(
+        d.get("team_strength"), d["coins"]
+    )
+
     if not prices:
-        prices, manual_count = await estimate_manual(d["platform"], d["epic"], d["bigtime"], d["showtime"])
+        prices, manual_count = await estimate_manual(
+            d["platform"], d["epic"], d["bigtime"], d["showtime"]
+        )
+
+    text = "📊 Akkaunt ma’lumotlari hisoblandi.\n\n"
 
     if prices:
         low, mid, high = prices
@@ -973,17 +992,21 @@ async def coins_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🔴 Tez sotish: {low:,} so‘m\n"
             f"🟡 O‘rtacha: {mid:,} so‘m\n"
             f"🟢 Yuqoriroq: {high:,} so‘m\n\n"
-            "🇺🇿 Bot O‘zbekiston eFootball akkauntlari bozorini tahlil qilgan holda narx belgilaydi. Narxlar o‘ylab topilmaydi!"
+            "🇺🇿 Bot O‘zbekiston eFootball akkauntlari bozorini tahlil qilgan "
+            "holda narx belgilaydi. Narxlar o‘ylab topilmaydi!"
         ).replace(",", " ")
     else:
         text += (
             "⚠️ Hozircha ishonchli narx chiqarish uchun o‘xshash ma’lumot yetarli emas.\n"
-            "Rasmda jamoa kuchi aniq ko‘rinmasa yoki o‘xshash e’lonlar kam bo‘lsa, bot narxni to‘qib chiqarmaydi."
+            "Rasmda jamoa kuchi aniq ko‘rinmasa yoki o‘xshash e’lonlar kam bo‘lsa, "
+            "bot narxni to‘qib chiqarmaydi."
         )
-    await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
-    await update.message.reply_text("Yana baholash uchun /bahola buyrug‘ini bosing.")
-    return ConversationHandler.END
 
+    await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text(
+        "Yana baholash uchun /bahola buyrug‘ini bosing."
+    )
+    return ConversationHandler.END
 
 async def addsale(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ADMIN_ID or update.effective_user.id != ADMIN_ID:
