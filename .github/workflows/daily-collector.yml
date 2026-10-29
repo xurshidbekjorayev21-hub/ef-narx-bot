@@ -1,0 +1,41 @@
+name: Daily Telegram Collector
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repositoryni yuklash
+        uses: actions/checkout@v4
+
+      - name: Pythonni sozlash
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Kutubxonalarni o‘rnatish
+        run: pip install -r requirements.txt
+
+      - name: Telegram e’lonlarini yig‘ish
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TG_SESSION_B64: ${{ secrets.TG_SESSION_B64 }}
+        run: |
+          echo "$TG_SESSION_B64" | base64 -d > ef_narx_reader.session
+          python channel_collector.py
+
+      - name: Yangi narxlarni saqlash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add listings.jsonl
+          git diff --cached --quiet || git commit -m "Update daily listings"
+          git push
