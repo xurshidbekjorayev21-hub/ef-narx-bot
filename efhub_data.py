@@ -66,11 +66,10 @@ if __name__ == "__main__":
 
 
 
-def search_players(name):
-    """eFHUB player index orqali futbolchi kartalarini qidiradi."""
-    import urllib.parse
 
-    name = name.strip()
+def search_players(name):
+    """eFHUB indeksidan ismga eng mos futbolchi kartalarini qidiradi."""
+    name = " ".join(name.strip().split())
     if len(name) < 2:
         return []
 
@@ -80,7 +79,10 @@ def search_players(name):
     )
     req = urllib.request.Request(
         index_url,
-        headers={"User-Agent": "Mozilla/5.0", "Referer": "https://efhub.com/"},
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://efhub.com/",
+        },
     )
 
     try:
@@ -91,27 +93,57 @@ def search_players(name):
         return []
 
     query = name.casefold()
-    matches = [
-        item for item in index
-        if query in str(item.get("e", "")).casefold()
-        or query in str(item.get("j", "")).casefold()
-        or query in str(item.get("c", "")).casefold()
-    ]
+
+    def norm(value):
+        return " ".join(str(value or "").casefold().split())
+
+    ranked = []
+    for item in index:
+        english = norm(item.get("e", ""))
+        japanese = norm(item.get("j", ""))
+        chinese = norm(item.get("c", ""))
+
+        if query == english:
+            score = 0
+        elif english.startswith(query):
+            score = 1
+        elif query in english:
+            score = 2
+        elif query == japanese or query == chinese:
+            score = 0
+        elif query in japanese or query in chinese:
+            score = 3
+        else:
+            continue
+
+        ranked.append((score, item))
+
+    ranked.sort(key=lambda pair: (pair[0], -int(pair[1].get("o") or 0)))
 
     results = []
-    for item in matches[:10]:
+    seen = set()
+
+    # Faqat eng mos bir nechta natijani tekshiramiz.
+    for _, item in ranked[:25]:
         player_id = str(item.get("i", ""))
-        if not player_id:
+        if not player_id or player_id in seen:
             continue
+        seen.add(player_id)
 
         try:
             player = get_player(player_id)
-            if player.get("name") is None:
+            if not player.get("name"):
                 player["name"] = item.get("e")
+
             player["index_overall"] = item.get("o")
+            player["matched_name"] = item.get("e")
+            player["name_match_exact"] = (
+                norm(player.get("name")) == query
+                or norm(item.get("e")) == query
+            )
             results.append(player)
         except Exception as exc:
-            print(f"Karta yuklanmadi ({player_id}): {exc}")
+            print(f"eFHUB karta yuklanmadi ({player_id}): {exc}")
 
     return results
 

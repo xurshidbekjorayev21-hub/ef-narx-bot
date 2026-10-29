@@ -439,7 +439,7 @@ async def analysis_bench_photo(update: Update, context: ContextTypes.DEFAULT_TYP
                 matches = await asyncio.to_thread(search_players, player_name)
                 if matches:
                     # Faqat ismga mos topilgan karta ma'lumotlarini yuboramiz.
-                    efhub_players.extend(matches[:2])
+                    efhub_players.extend(matches[:20])
             except Exception:
                 log.exception("eFHUB qidiruvi xatosi: %s", player_name)
 
@@ -455,18 +455,36 @@ async def analysis_bench_photo(update: Update, context: ContextTypes.DEFAULT_TYP
             )
 
         prompt = (
-            "Siz eFootball akkauntlari bo'yicha tajribali tahlilchisiz. "
-            "Quyidagi ikki rasm: birinchi rasm asosiy tarkib, ikkinchisi zaxira. "
-            "Faqat rasmlarda aniq ko'rinadigan ma'lumotlardan foydalaning; "
-            "o'qilmaydigan futbolchi nomlari yoki kartalar haqida taxminni fakt sifatida bermang. "
-            "O'zbek tilida quyidagi bo'limlar bilan tahlil yozing: "
-            "1) ko'rinadigan futbolchilar va maxsus kartalar; "
-            "2) tarkibning kuchli tomonlari; "
-            "3) zaif tomonlar va ehtimoliy bo'shliqlar; "
-            "4) taktika va joylashuv bo'yicha tavsiyalar; "
-            "5) keyingi yaxshilash uchun ustuvor qadamlar. "
-            "Rasmda ko'rinmagan ma'lumotlarni aniqlab bo'lmasligini ochiq ayting. "
-            "Akkauntning aniq bozor narxini faqat shu rasmlarga qarab kafolatlamang."
+            "Siz eFootball bo'yicha professional tarkib tahlilchisisiz. "
+            "Birinchi rasm asosiy tarkib, ikkinchi rasm zaxira. "
+            "Javobni faqat ravon, imloviy to'g'ri o'zbek tilida yozing. "
+            "Ortiqcha kirish so'zlari, takrorlar va umumiy gaplar yozmang. "
+            "Ko'rinmagan ism, reyting, karta turi, statistika yoki ko'nikmani uydirmang. "
+            "Rasmdagi reyting bilan eFHUB ma'lumotidagi reytingni aralashtirmang. "
+            "eFHUB ma'lumotlari boshqa karta bo'lishi mumkin bo'lsa, uni tasdiqlangan deb ko'rsatmang. "
+            "eFHUB ma'lumotida overall, position, playing_style, stats va skills bo'lsa, "
+            "mos kelgan futbolchi uchun ulardan foydalaning. "
+            "eFHUB qidiruvi natijasi bo'lmasa, bu ma'lumot mavjud emasligini ayting; "
+            "eFHUB ishlamagan bo'lsa, uning ma'lumotlari tekshirilmaganini ochiq yozing. "
+            "Natijani quyidagi aniq tuzilishda yozing:\n"
+            "⚽ 1. ASOSIY TARKIB\n"
+            "Ko'rinadigan futbolchilarni pozitsiyasi va rasmda ko'ringan reytingi bilan sanang. "
+            "Ism noaniq bo'lsa, 'ismi rasmda aniq o'qilmadi' deb yozing.\n"
+            "🪑 2. ZAXIRA\n"
+            "Faqat ko'rinadigan va ishonchli aniqlangan futbolchilarni sanang.\n"
+            "📊 3. eFHUB MA'LUMOTLARI\n"
+            "Mosligi tasdiqlangan kartalar uchun o'yin uslubi, muhim statistika va ko'nikmalarni yozing. "
+            "Rasm bilan mosligi tasdiqlanmagan kartalarni alohida belgilang.\n"
+            "💪 4. KUCHLI TOMONLAR\n"
+            "Faqat ko'ringan tarkib va tasdiqlangan statistikaga asoslaning.\n"
+            "⚠️ 5. KAMCHILIKLAR\n"
+            "Pozitsiya yoki statistika yetishmasa, taxmin qilmang.\n"
+            "🎮 6. TAKTIKA\n"
+            "Mos sxemani va pressing, himoya chizig'i hamda hujum uslubini qisqa asoslang. "
+            "Tarkibdan dalil bo'lmasa, tavsiyani shartli deb belgilang.\n"
+            "🎯 7. KEYINGI QADAM\n"
+            "Eng muhim 3 ta amaliy tavsiyani ustuvorlik bo'yicha bering. "
+            "Akkauntning bozor narxini rasmlarga qarab aniqlamang."
         )
 
         prompt += efhub_context
