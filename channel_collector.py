@@ -153,8 +153,20 @@ async def main():
             print(f"{channel_name}: XATO — {e}")
 
     # Har ishga tushirishda natijani yangilaydi; postlar sanasi bo‘yicha tartiblaydi.
+    existing = {}
+    if OUT.exists():
+        with OUT.open("r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    row = json.loads(line)
+                    key = (row.get("channel"), row.get("message_id"))
+                    existing[key] = row
+                except (json.JSONDecodeError, TypeError):
+                    continue
+    for row in found:
+        existing[(row.get("channel"), row.get("message_id"))] = row
     with OUT.open("w", encoding="utf-8") as f:
-        for row in sorted(found, key=lambda x: x["date"] or ""):
+        for row in sorted(existing.values(), key=lambda x: x.get("date") or ""):
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     with_price = sum(1 for x in found if x["price_uzs"] is not None)
