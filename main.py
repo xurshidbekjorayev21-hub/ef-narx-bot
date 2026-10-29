@@ -444,6 +444,66 @@ async def payment_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+
+async def review_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if not ADMIN_ID or query.from_user.id != ADMIN_ID:
+        await query.message.reply_text("⛔ Bu amal faqat administrator uchun.")
+        return
+
+    action, request_id = query.data.split(":")
+    request_id = int(request_id)
+
+    with db() as conn:
+        payment = conn.execute(
+            "SELECT user_id, status FROM payment_requests WHERE id = ?",
+            (request_id,),
+        ).fetchone()
+
+        if not payment or payment["status"] != "pending":
+            await query.message.reply_text(
+                "Bu so‘rov topilmadi yoki allaqachon ko‘rib chiqilgan."
+            )
+            return
+
+        if action == "pay_approve":
+            expires = (
+                datetime.now(timezone.utc) + timedelta(days=14)
+            ).isoformat()
+            conn.execute(
+                "INSERT INTO user_subscriptions "
+                "(user_id, expires_at, free_analysis_used) VALUES (?, ?, 0) "
+                "ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at",
+                (payment["user_id"], expires),
+            )
+            status = "approved"
+            admin_message = "✅ To‘lov tasdiqlandi. Obuna 14 kunga faollashtirildi."
+            user_message = "🎉 To‘lovingiz tasdiqlandi. Obunangiz 14 kun faol."
+        elif action == "pay_reject":
+            status = "rejected"
+            admin_message = "❌ To‘lov so‘rovi rad etildi."
+            user_message = "❌ To‘lov chekingiz rad etildi. Savolingiz bo‘lsa administratorga murojaat qiling."
+        else:
+            await query.message.reply_text("Noma’lum amal.")
+            return
+
+        conn.execute(
+            "UPDATE payment_requests SET status=?, reviewed_at=CURRENT_TIMESTAMP, "
+            "reviewed_by=? WHERE id=?",
+            (status, query.from_user.id, request_id),
+        )
+
+    await query.edit_message_caption(
+        caption=(query.message.caption or "") + "\n\n" + admin_message,
+        reply_markup=None,
+    )
+    await context.bot.send_message(
+        chat_id=payment["user_id"],
+        text=user_message,
+    )
+
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Buyruqlar:\n/start — botni boshlash\n/bahola — akkauntni baholash\n"
