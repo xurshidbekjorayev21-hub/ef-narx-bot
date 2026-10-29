@@ -8,7 +8,7 @@ import urllib.error
 from datetime import datetime, timedelta, timezone
 from statistics import median
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ConversationHandler,
     ContextTypes, filters
@@ -208,7 +208,59 @@ def estimate_from_recent_listings(team_strength, coins):
     return (int(mid * 0.8), mid, int(mid * 1.2)), len(rows), len(selected)
 
 
+
+
+REQUIRED_CHATS = [
+    ("@Retro_eFootball", "https://t.me/Retro_eFootball", "📢 Retro eFootball"),
+    ("@eFretro_group", "https://t.me/eFretro_group", "👥 eFretro guruhi"),
+    ("@Retro_eFshop", "https://t.me/Retro_eFshop", "🛒 Retro eFshop"),
+]
+
+async def subscription_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not user:
+        return False
+
+    missing = []
+    for chat, url, title in REQUIRED_CHATS:
+        try:
+            member = await context.bot.get_chat_member(chat, user.id)
+            if member.status not in ("member", "administrator", "creator"):
+                missing.append((url, title))
+        except Exception as e:
+            print(f"Obuna tekshiruvi xatosi ({chat}): {e}")
+            missing.append((url, title))
+
+    if not missing:
+        return True
+
+    keyboard = [
+        [InlineKeyboardButton(title, url=url)]
+        for url, title in missing
+    ]
+    keyboard.append([
+        InlineKeyboardButton("✅ Obunani tekshirish", callback_data="check_subscription")
+    ])
+
+    if update.effective_message:
+        await update.effective_message.reply_text(
+            "⛔ Botdan foydalanish uchun quyidagi uchala kanal/guruhga ham a’zo bo‘ling. "
+            "Bittasidan chiqsangiz, foydalanish cheklanadi.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    return False
+
+async def check_subscription_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if await subscription_check(update, context):
+        await query.message.reply_text(
+            "✅ Uchala obuna ham tasdiqlandi! Endi botdan foydalanishingiz mumkin."
+        )
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await subscription_check(update, context):
+        return
     await update.message.reply_text(
         "⚽ Assalomu alaykum! Bu — eF Narx Bot.\n\n"
         "Akkauntni baholash uchun /bahola buyrug‘ini bosing. Avval eFootball jamoangizning "
@@ -438,38 +490,21 @@ async def coins_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ))
 
     prices, recent_total, comparable_count = estimate_from_recent_listings(d.get("team_strength"), d["coins"])
-    basis = "so‘nggi 30 kunlik e’lonlar"
     if not prices:
         prices, manual_count = await estimate_manual(d["platform"], d["epic"], d["bigtime"], d["showtime"])
-        if prices:
-            basis = "qo‘lda tasdiqlangan taqqoslash yozuvlari"
-    text = (
-        "⚽ eF NARX BOT — BAHOLASH HISOBOTI\n\n"
-        f"📱 Platforma: {d['platform'].title()}\n"
-        f"💎 Epic: {d['epic']} ta\n"
-        f"🔥 Big Time: {d['bigtime']} ta\n"
-        f"⭐ Show Time: {d['showtime']} ta\n"
-        f"📈 Jamoa kuchi (rasmdan): {d.get('team_strength') if d.get('team_strength') is not None else 'aniqlanmadi'}\n"
-        f"🎮 Google Play: {d['google_play']}\n"
-        f"🍎 Game Center: {d['game_center']}\n"
-        f"🆔 KONAMI ID: {d['konami_id']}\n"
-        f"🪙 Minus Coin: {d['minus_coins']}\n"
-        f"💰 Coin: {d['coins']}\n\n"
-    )
+
     if prices:
         low, mid, high = prices
         text += (
-            "💵 TAXMINIY NARX ORALIG‘I (UZS):\n"
-            f"🔴 Tez sotish: {low:,} so‘m\n"
-            f"🟡 O‘rtacha: {mid:,} so‘m\n"
-            f"🟢 Yuqoriroq: {high:,} so‘m\n\n"
+            "💵 TAXMINIY NARX ORALIG‘I (UZS):\\n"
+            f"🔴 Tez sotish: {low:,} so‘m\\n"
+            f"🟡 O‘rtacha: {mid:,} so‘m\\n"
+            f"🟢 Yuqoriroq: {high:,} so‘m\\n\\n"
             "🇺🇿 Bot O‘zbekiston eFootball akkauntlari bozorini tahlil qilgan holda narx belgilaydi. Narxlar o‘ylab topilmaydi!"
         ).replace(",", " ")
-        if basis == "so‘nggi 30 kunlik e’lonlar":
-
     else:
         text += (
-            "⚠️ Hozircha ishonchli narx chiqarish uchun o‘xshash ma’lumot yetarli emas.\n"
+            "⚠️ Hozircha ishonchli narx chiqarish uchun o‘xshash ma’lumot yetarli emas.\\n"
             "Rasmda jamoa kuchi aniq ko‘rinmasa yoki o‘xshash e’lonlar kam bo‘lsa, bot narxni to‘qib chiqarmaydi."
         )
     await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
@@ -525,6 +560,7 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
         allow_reentry=True,
     )
+    app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="^check_subscription$"))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("narx", narx_cmd))
