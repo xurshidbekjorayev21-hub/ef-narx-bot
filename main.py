@@ -493,6 +493,7 @@ async def coins_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not prices:
         prices, manual_count = await estimate_manual(d["platform"], d["epic"], d["bigtime"], d["showtime"])
 
+    text = ""
     if prices:
         low, mid, high = prices
         text += (
