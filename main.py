@@ -68,6 +68,13 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_cooldowns (
+                user_id INTEGER PRIMARY KEY,
+                last_valuation_at TEXT,
+                last_rejoined_at TEXT
+            )
+        """)
         # Upgrade an older database without losing existing records.
         cols = {r[1] for r in conn.execute("PRAGMA table_info(valuations)").fetchall()}
         if "team_strength" not in cols:
@@ -266,7 +273,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Akkauntni baholash uchun /bahola buyrug‘ini bosing. Avval eFootball jamoangizning "
         "o‘yin ichidagi skrinshotini yuborish so‘raladi. Boshqa rasmlar qabul qilinmaydi.\n\n"
         "Narx faqat yetarli o‘xshash ma’lumot bo‘lsa ko‘rsatiladi; bu kafolatlangan sotuv narxi emas.",
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=kb(["💰 Akkauntni baholash"]),
     )
 
 
@@ -294,6 +301,28 @@ async def narx_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def bahola(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    now = datetime.now(timezone.utc)
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT last_valuation_at FROM user_cooldowns WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+
+    if row and row["last_valuation_at"]:
+        last = datetime.fromisoformat(row["last_valuation_at"])
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        remaining = 10800 - (now - last).total_seconds()
+        if remaining > 0:
+            minutes = int(remaining // 60) + 1
+            await update.effective_message.reply_text(
+                f"⏳ Akkauntingiz yaqinda baholangan. "
+                f"Qayta baholash uchun yana {minutes} daqiqa kuting."
+            )
+            return ConversationHandler.END
+
     context.user_data.clear()
     await update.message.reply_text(
         "📸 Avval eFootball o‘yinidagi jamoangiz/akkauntingiz ekranining skrinshotini yuboring.\n\n"
@@ -509,7 +538,21 @@ async def coins_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Rasmda jamoa kuchi aniq ko‘rinmasa yoki o‘xshash e’lonlar kam bo‘lsa, bot narxni to‘qib chiqarmaydi."
         )
     await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
-    await update.message.reply_text("Yana baholash uchun /bahola buyrug‘ini bosing.")
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_cooldowns (user_id, last_valuation_at)
+            VALUES (?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                last_valuation_at = excluded.last_valuation_at
+            """,
+            (update.effective_user.id, datetime.now(timezone.utc).isoformat()),
+        )
+
+    await update.message.reply_text(
+        "💰 Akkauntni baholash",
+        reply_markup=kb(["💰 Akkauntni baholash"]),
+    )
     return ConversationHandler.END
 
 
@@ -545,7 +588,7 @@ def main():
     init_db()
     app = Application.builder().token(TOKEN).build()
     conv = ConversationHandler(
-        entry_points=[CommandHandler("bahola", bahola)],
+        entry_points=[CommandHandler("bahola", bahola), MessageHandler(filters.Regex("^💰 Akkauntni baholash$"), bahola)],
         states={
             PHOTO: [MessageHandler(filters.PHOTO, photo_step), MessageHandler(filters.TEXT & ~filters.COMMAND, photo_text_step)],
             PLATFORM: [MessageHandler(filters.TEXT & ~filters.COMMAND, platform_step)],
