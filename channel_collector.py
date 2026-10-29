@@ -13,7 +13,6 @@ from pathlib import Path
 
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.sessions import StringSession
 
 CHANNELS = [
     os.getenv("CHANNEL", "efootball_shop"),
@@ -22,7 +21,7 @@ CHANNELS = [
 ]
 API_ID = os.getenv("TG_API_ID")
 API_HASH = os.getenv("TG_API_HASH")
-SESSION = os.getenv("TG_SESSION", "ef_narx_reader")
+SESSION = os.getenv("TG_SESSION_B64", "")
 OUT = Path(os.getenv("OUTPUT_FILE", "listings.jsonl"))
 
 PRICE_RE = re.compile(
@@ -118,8 +117,10 @@ async def main():
         raise SystemExit("TG_API_ID raqam bo‘lishi kerak.")
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-    client = TelegramClient(SESSION, api_id, API_HASH)
-    await client.start()
+    client = TelegramClient(StringSession(SESSION), api_id, API_HASH)
+    await client.connect()
+    if not await client.is_user_authorized():
+        raise RuntimeError("Telegram sessiyasi yaroqsiz yoki tizimga kiritilmagan.")
 
     found = []
     seen = set()
