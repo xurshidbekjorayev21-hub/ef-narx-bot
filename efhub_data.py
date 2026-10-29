@@ -124,7 +124,7 @@ def search_players(name):
     seen = set()
 
     # Faqat eng mos bir nechta natijani tekshiramiz.
-    for _, item in ranked[:25]:
+    for _, item in ranked:
         player_id = str(item.get("i", ""))
         if not player_id or player_id in seen:
             continue

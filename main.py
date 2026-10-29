@@ -439,17 +439,17 @@ async def analysis_bench_photo(update: Update, context: ContextTypes.DEFAULT_TYP
                 matches = await asyncio.to_thread(search_players, player_name)
                 if matches:
                     # Faqat ismga mos topilgan karta ma'lumotlarini yuboramiz.
-                    efhub_players.extend(matches[:20])
+                    efhub_players.extend(matches)
             except Exception:
                 log.exception("eFHUB qidiruvi xatosi: %s", player_name)
 
         efhub_context = ""
         if efhub_players:
             efhub_context = (
-                "\\n\\neFHUB FUTBOLCHI MA’LUMOTLARI "
-                "(topilgan kartalar; ism va kartani rasmlar bilan solishtiring):\\n"
+                "\n\neFHUB FUTBOLCHI MA’LUMOTLARI "
+                "(topilgan kartalar; ism va kartani rasmlar bilan solishtiring):\n"
                 + json.dumps(efhub_players, ensure_ascii=False)
-                + "\\nUshbu statistikalar va ko'nikmalarni tahlilda hisobga oling. "
+                + "\nUshbu statistikalar va ko'nikmalarni tahlilda hisobga oling. "
                 "Agar kartaning aynan shu versiyasi rasmdagi karta ekaniga ishonch "
                 "bo'lmasa, moslik tasdiqlanmaganini ayting."
             )
@@ -635,56 +635,83 @@ async def review_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("⛔ Bu amal faqat administrator uchun.")
         return
 
-    action, request_id = query.data.split(":")
-    request_id = int(request_id)
+    try:
+        action, request_id_text = query.data.split(":", 1)
+        request_id = int(request_id_text)
+    except (ValueError, AttributeError):
+        await query.message.reply_text("❌ Noto‘g‘ri to‘lov so‘rovi.")
+        return
 
-    with db() as conn:
-        payment = conn.execute(
-            "SELECT user_id, status FROM payment_requests WHERE id = ?",
-            (request_id,),
-        ).fetchone()
+    if action not in ("pay_approve", "pay_reject"):
+        await query.message.reply_text("❌ Noma’lum amal.")
+        return
 
-        if not payment or payment["status"] != "pending":
-            await query.message.reply_text(
-                "Bu so‘rov topilmadi yoki allaqachon ko‘rib chiqilgan."
+    status = "approved" if action == "pay_approve" else "rejected"
+    admin_message = (
+        "✅ To‘lov tasdiqlandi. Obuna 14 kunga faollashtirildi."
+        if status == "approved"
+        else "❌ To‘lov so‘rovi rad etildi."
+    )
+    user_message = (
+        "🎉 To‘lovingiz tasdiqlandi. Obunangiz 14 kun faol."
+        if status == "approved"
+        else "❌ To‘lov chekingiz rad etildi. Savolingiz bo‘lsa administratorga murojaat qiling."
+    )
+
+    try:
+        with db() as conn:
+            payment = conn.execute(
+                "SELECT user_id FROM payment_requests WHERE id=? AND status='pending'",
+                (request_id,),
+            ).fetchone()
+
+            if not payment:
+                await query.message.reply_text(
+                    "ℹ️ Bu to‘lov so‘rovi allaqachon ko‘rib chiqilgan yoki topilmadi."
+                )
+                return
+
+            cur = conn.execute(
+                "UPDATE payment_requests SET status=?, reviewed_at=CURRENT_TIMESTAMP, "
+                "reviewed_by=? WHERE id=? AND status='pending'",
+                (status, query.from_user.id, request_id),
             )
-            return
+            if cur.rowcount != 1:
+                await query.message.reply_text(
+                    "ℹ️ Bu to‘lov so‘rovi allaqachon ko‘rib chiqilgan."
+                )
+                return
 
-        if action == "pay_approve":
-            expires = (
-                datetime.now(timezone.utc) + timedelta(days=14)
-            ).isoformat()
-            conn.execute(
-                "INSERT INTO user_subscriptions "
-                "(user_id, expires_at, free_analysis_used) VALUES (?, ?, 0) "
-                "ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at",
-                (payment["user_id"], expires),
-            )
-            status = "approved"
-            admin_message = "✅ To‘lov tasdiqlandi. Obuna 14 kunga faollashtirildi."
-            user_message = "🎉 To‘lovingiz tasdiqlandi. Obunangiz 14 kun faol."
-        elif action == "pay_reject":
-            status = "rejected"
-            admin_message = "❌ To‘lov so‘rovi rad etildi."
-            user_message = "❌ To‘lov chekingiz rad etildi. Savolingiz bo‘lsa administratorga murojaat qiling."
-        else:
-            await query.message.reply_text("Noma’lum amal.")
-            return
-
-        conn.execute(
-            "UPDATE payment_requests SET status=?, reviewed_at=CURRENT_TIMESTAMP, "
-            "reviewed_by=? WHERE id=?",
-            (status, query.from_user.id, request_id),
+            if status == "approved":
+                expires = (
+                    datetime.now(timezone.utc) + timedelta(days=14)
+                ).isoformat()
+                conn.execute(
+                    "INSERT INTO user_subscriptions "
+                    "(user_id, expires_at, free_analysis_used) VALUES (?, ?, 0) "
+                    "ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at",
+                    (payment["user_id"], expires),
+                )
+    except Exception:
+        log.exception("To‘lovni ko‘rib chiqishda xato: %s", request_id)
+        await query.message.reply_text(
+            "❌ To‘lovni qayta ishlashda xato yuz berdi. Loglarni tekshiring."
         )
+        return
 
-    await query.edit_message_caption(
-        caption=(query.message.caption or "") + "\n\n" + admin_message,
-        reply_markup=None,
-    )
-    await context.bot.send_message(
-        chat_id=payment["user_id"],
-        text=user_message,
-    )
+    try:
+        caption = (query.message.caption or "") + "\n\n" + admin_message
+        await query.edit_message_caption(caption=caption, reply_markup=None)
+    except Exception:
+        log.exception("Administrator xabarini yangilashda xato: %s", request_id)
+
+    try:
+        await context.bot.send_message(
+            chat_id=payment["user_id"],
+            text=user_message,
+        )
+    except Exception:
+        log.exception("Foydalanuvchiga to‘lov xabarini yuborishda xato: %s", request_id)
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -942,15 +969,15 @@ async def coins_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if prices:
         low, mid, high = prices
         text += (
-            "💵 TAXMINIY NARX ORALIG‘I (UZS):\\n"
-            f"🔴 Tez sotish: {low:,} so‘m\\n"
-            f"🟡 O‘rtacha: {mid:,} so‘m\\n"
-            f"🟢 Yuqoriroq: {high:,} so‘m\\n\\n"
+            "💵 TAXMINIY NARX ORALIG‘I (UZS):\n"
+            f"🔴 Tez sotish: {low:,} so‘m\n"
+            f"🟡 O‘rtacha: {mid:,} so‘m\n"
+            f"🟢 Yuqoriroq: {high:,} so‘m\n\n"
             "🇺🇿 Bot O‘zbekiston eFootball akkauntlari bozorini tahlil qilgan holda narx belgilaydi. Narxlar o‘ylab topilmaydi!"
         ).replace(",", " ")
     else:
         text += (
-            "⚠️ Hozircha ishonchli narx chiqarish uchun o‘xshash ma’lumot yetarli emas.\\n"
+            "⚠️ Hozircha ishonchli narx chiqarish uchun o‘xshash ma’lumot yetarli emas.\n"
             "Rasmda jamoa kuchi aniq ko‘rinmasa yoki o‘xshash e’lonlar kam bo‘lsa, bot narxni to‘qib chiqarmaydi."
         )
     await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
