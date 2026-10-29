@@ -5,6 +5,7 @@ import sqlite3
 import logging
 import urllib.request
 import urllib.error
+from efhub_data import search_players
 from datetime import datetime, timedelta, timezone
 from statistics import median
 
@@ -382,6 +383,77 @@ async def analysis_bench_photo(update: Update, context: ContextTypes.DEFAULT_TYP
             encoded = base64.b64encode(image_bytes).decode("ascii")
             image_urls.append("data:image/jpeg;base64," + encoded)
 
+        # AI avval rasmlardagi futbolchi nomlarini aniqlaydi.
+        identify_payload = {
+            "model": VISION_MODEL,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text":
+                     "Ikki eFootball tarkib rasmini ko'rib, aniq o'qiy olgan "
+                     "futbolchi ismlarini JSON ro'yxat qilib qaytaring. "
+                     'Faqat JSON formatida javob bering: { "players": ["Player Name"] }. '
+                     "Ism noaniq bo'lsa, uni ro'yxatga kiritmang."},
+                    {"type": "image_url", "image_url":
+                     {"url": image_urls[0], "detail": "high"}},
+                    {"type": "image_url", "image_url":
+                     {"url": image_urls[1], "detail": "high"}},
+                ],
+            }],
+            "max_tokens": 500,
+            "thinking": {"type": "disabled"},
+        }
+
+        def identify_api():
+            req = urllib.request.Request(
+                "https://api.deepseek.com/chat/completions",
+                data=json.dumps(identify_payload).encode("utf-8"),
+                headers={
+                    "Authorization": "Bearer " + DEEPSEEK_API_KEY,
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=120) as response:
+                return json.loads(response.read().decode("utf-8"))
+
+        import json as json_module
+        import re as re_module
+
+        player_names = []
+        try:
+            identified = await asyncio.to_thread(identify_api)
+            raw_names = identified["choices"][0]["message"]["content"]
+            raw_names = re_module.sub(
+                r"^```(?:json)?|```$", "", raw_names.strip(),
+                flags=re_module.I | re_module.M
+            ).strip()
+            parsed_names = json_module.loads(raw_names)
+            player_names = parsed_names.get("players", [])[:30]
+        except Exception:
+            log.exception("Rasmdagi futbolchi nomlarini aniqlashda xato")
+
+        efhub_players = []
+        for player_name in player_names:
+            try:
+                matches = await asyncio.to_thread(search_players, player_name)
+                if matches:
+                    # Faqat ismga mos topilgan karta ma'lumotlarini yuboramiz.
+                    efhub_players.extend(matches[:2])
+            except Exception:
+                log.exception("eFHUB qidiruvi xatosi: %s", player_name)
+
+        efhub_context = ""
+        if efhub_players:
+            efhub_context = (
+                "\\n\\neFHUB FUTBOLCHI MA’LUMOTLARI "
+                "(topilgan kartalar; ism va kartani rasmlar bilan solishtiring):\\n"
+                + json.dumps(efhub_players, ensure_ascii=False)
+                + "\\nUshbu statistikalar va ko'nikmalarni tahlilda hisobga oling. "
+                "Agar kartaning aynan shu versiyasi rasmdagi karta ekaniga ishonch "
+                "bo'lmasa, moslik tasdiqlanmaganini ayting."
+            )
+
         prompt = (
             "Siz eFootball akkauntlari bo'yicha tajribali tahlilchisiz. "
             "Quyidagi ikki rasm: birinchi rasm asosiy tarkib, ikkinchisi zaxira. "
@@ -396,6 +468,8 @@ async def analysis_bench_photo(update: Update, context: ContextTypes.DEFAULT_TYP
             "Rasmda ko'rinmagan ma'lumotlarni aniqlab bo'lmasligini ochiq ayting. "
             "Akkauntning aniq bozor narxini faqat shu rasmlarga qarab kafolatlamang."
         )
+
+        prompt += efhub_context
 
         payload = {
             "model": VISION_MODEL,
@@ -471,9 +545,9 @@ async def subscription_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("💳 To‘lov qilish", callback_data="begin_payment")]
     ])
     await update.message.reply_text(
-        "⭐ eF Narx Bot obunasi\\n\\n"
-        "💰 Narxi: 10 000 so‘m\\n"
-        "🗓 Muddati: 14 kun\\n\\n"
+        "⭐ eF Narx Bot obunasi\n\n"
+        "💰 Narxi: 10 000 so‘m\n"
+        "🗓 Muddati: 14 kun\n\n"
         "To‘lovdan so‘ng chekni botga yuboring. Administrator pul tushganini bank ilovasidan tekshiradi. "
         "Chekning o‘zi obunani faollashtirmaydi.",
         reply_markup=keyboard,
@@ -487,12 +561,12 @@ async def begin_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["awaiting_payment_receipt"] = True
 
     await query.message.reply_text(
-        "⭐ eF Narx Bot — obuna to‘lovi\\n\\n"
-        "💰 Summa: 10 000 so‘m\\n"
-        "🗓 Muddat: 14 kun\\n\\n"
-        "💳 Karta: 9860350147639370\\n"
-        "👤 Karta egasi: Xurshidbek Jo‘rayev\\n"
-        "🏦 Bank: TBC Bank (Humo)\\n\\n"
+        "⭐ eF Narx Bot — obuna to‘lovi\n\n"
+        "💰 Summa: 10 000 so‘m\n"
+        "🗓 Muddat: 14 kun\n\n"
+        "💳 Karta: 9860350147639370\n"
+        "👤 Karta egasi: Xurshidbek Jo‘rayev\n"
+        "🏦 Bank: TBC Bank (Humo)\n\n"
         "To‘lovni amalga oshirgach, chek rasmini shu chatga yuboring. "
         "Administrator pul tushganini bank ilovasidan tekshiradi. "
         "Chek yuborishning o‘zi obunani faollashtirmaydi. "
@@ -522,7 +596,7 @@ async def payment_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_photo(
         chat_id=ADMIN_ID,
         photo=receipt_id,
-        caption=f"💳 Yangi to‘lov cheki\\nSo‘rov: {request_id}\\nFoydalanuvchi ID: {user.id}\\n"
+        caption=f"💳 Yangi to‘lov cheki\nSo‘rov: {request_id}\nFoydalanuvchi ID: {user.id}\n"
                 "Bank ilovasidan haqiqiy tushumni tekshiring. Chekning o‘zi obunani faollashtirmaydi.",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"pay_approve:{request_id}"),
