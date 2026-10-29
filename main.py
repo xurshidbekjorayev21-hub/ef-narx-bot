@@ -297,9 +297,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "⚽ Assalomu alaykum! Bu — eF Narx Bot.\n\n"
-        "💰 Akkaunt narxini aniqlash — bepul.\\n"
-        "🔍 Akkauntni tahlil qilish — birinchi marta bepul, keyingi tahlillar obuna orqali.\\n"
-        "⭐ Obuna — 14 kun uchun 10 000 so‘m.\\n\\n"
+        "1️⃣ 💰 Akkaunt narxini aniqlash — bepul.\n"
+        "2️⃣ 🔍 Akkauntni tahlil qilish — birinchi marta bepul, keyingi tahlillar obuna orqali.\n"
+        "3️⃣ ⭐ Obuna — 14 kun uchun 10 000 so‘m.\n\n"
         "Quyidagi tugmalardan birini tanlang.",
         reply_markup=keyboard,
     )
