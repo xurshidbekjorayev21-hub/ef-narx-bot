@@ -16,6 +16,7 @@ from telethon import TelegramClient
 CHANNELS = [
     os.getenv("CHANNEL", "efootball_shop"),
     "efootballpageshop",
+    "zicoshopkanal",
 ]
 API_ID = os.getenv("TG_API_ID")
 API_HASH = os.getenv("TG_API_HASH")
