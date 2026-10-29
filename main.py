@@ -408,6 +408,7 @@ async def analysis_bench_photo(update: Update, context: ContextTypes.DEFAULT_TYP
                 ],
             }],
             "max_tokens": 1200,
+            "thinking": {"type": "disabled"},
         }
 
         request = urllib.request.Request(
