@@ -341,3 +341,158 @@ def register_match_finder(app: Application):
     app.add_handler(MessageHandler(filters.Regex(r"^⚽ UZ MATCH FINDER$"), menu_button))
     app.add_handler(CallbackQueryHandler(callback, pattern=r"^mf:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler), group=1)
+
+# ===== UZ MATCH FINDER: ROOM & RESULT PATCH =====
+import random
+import re
+
+_mf_old_callback = callback
+_mf_old_text_handler = text_handler
+
+async def callback(update, context):
+    q = update.callback_query
+    data = q.data or ""
+    uid = q.from_user.id
+
+    if data.startswith("mf:accept:"):
+        await q.answer()
+        mid = int(data.split(":")[-1])
+
+        with conn() as c:
+            m = c.execute(
+                "SELECT * FROM mf_matches WHERE id=?", (mid,)
+            ).fetchone()
+
+            if not m or uid not in (m["player1"], m["player2"]) or m["status"] != "invited":
+                await q.edit_message_text("Bu taklif faol emas.")
+                return
+
+            host = random.choice((m["player1"], m["player2"]))
+            c.execute(
+                "UPDATE mf_matches SET status='room_wait',host_id=? WHERE id=?",
+                (host, mid)
+            )
+
+        opponent = m["player2"] if host == m["player1"] else m["player1"]
+
+        await context.bot.send_message(
+            host,
+            f"🎲 Qura natijasi: SIZ xona yaratuvchisiz!\n\n"
+            f"Match #{mid}\n"
+            "eFootball'da xona yarating va xona ID kodini shu botga yuboring."
+        )
+
+        await context.bot.send_message(
+            opponent,
+            f"🎲 Qura natijasi: raqib xona yaratadi.\n"
+            f"Match #{mid}\nXona ID kodini kuting."
+        )
+
+        await q.edit_message_text("✅ Taklif qabul qilindi. Qura tashlandi!")
+        return
+
+    await _mf_old_callback(update, context)
+
+async def text_handler(update, context):
+    uid = update.effective_user.id
+    value = (update.message.text or "").strip()
+
+    # Xona kodini qabul qilish
+    with conn() as c:
+        m = c.execute(
+            "SELECT * FROM mf_matches WHERE host_id=? AND status='room_wait' ORDER BY id DESC LIMIT 1",
+            (uid,)
+        ).fetchone()
+
+    if m:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{3,32}", value):
+            await update.message.reply_text("Xona ID kodini to'g'ri yuboring.")
+            return
+
+        with conn() as c:
+            c.execute(
+                "UPDATE mf_matches SET room_id=?,status='active' WHERE id=? AND status='room_wait'",
+                (value, m["id"])
+            )
+
+        opponent = m["player2"] if uid == m["player1"] else m["player1"]
+
+        msg = (
+            f"🏟 MATCH #{m['id']} XONASI TAYYOR!\n\n"
+            f"🔑 Xona ID: {value}\n\n"
+            "O'yinni boshlashingiz mumkin.\n"
+            f"Tugagach hisobni yuboring: {m['id']} 2:1"
+        )
+
+        await update.message.reply_text("✅ Xona kodi saqlandi va raqibga yuborildi.")
+        await context.bot.send_message(opponent, msg)
+        return
+
+    # Hisob: MATCH_ID 2:1
+    score = re.fullmatch(r"(\d+)\s+(\d{1,2})\s*:\s*(\d{1,2})", value)
+
+    if score:
+        mid, mine, theirs = map(int, score.groups())
+        await submit_result(update, context, mid, mine, theirs)
+        return
+
+    await _mf_old_text_handler(update, context)
+
+async def submit_result(update, context, mid, mine, theirs):
+    if not (0 <= mine <= 99 and 0 <= theirs <= 99):
+        await update.message.reply_text("Hisob 0–99 oralig'ida bo'lishi kerak.")
+        return
+
+    uid = update.effective_user.id
+
+    with conn() as c:
+        m = c.execute(
+            "SELECT * FROM mf_matches WHERE id=?", (mid,)
+        ).fetchone()
+
+        if not m or m["status"] != "active" or uid not in (m["player1"], m["player2"]):
+            await update.message.reply_text("Match topilmadi yoki faol emas.")
+            return
+
+        if m["reporter"] is not None:
+            await update.message.reply_text("Natija allaqachon yuborilgan.")
+            return
+
+        p1, p2 = (mine, theirs) if uid == m["player1"] else (theirs, mine)
+
+        c.execute(
+            "UPDATE mf_matches SET status='reported',reporter=?,p1_score=?,p2_score=? WHERE id=?",
+            (uid, p1, p2, mid)
+        )
+
+        opponent = m["player2"] if uid == m["player1"] else m["player1"]
+
+    await update.message.reply_text("✅ Natija raqibga yuborildi. Tasdiq kutilmoqda.")
+
+    await context.bot.send_message(
+        opponent,
+        f"⚽ Match #{mid}\nHisob: {p1}:{p2}\n\nNatijani tasdiqlang:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"mf:confirm:{mid}")],
+            [InlineKeyboardButton("⚠️ Nizo ochish", callback_data=f"mf:dispute:{mid}")]
+        ])
+    )
+
+async def result_cmd(update, context):
+    if len(context.args) != 3:
+        await update.message.reply_text(
+            "Format: /mfresult MATCH_ID SIZNING_GOL RAQIB_GOL"
+        )
+        return
+
+    try:
+        mid, mine, theirs = map(int, context.args)
+    except ValueError:
+        await update.message.reply_text("Hisob formatini tekshiring.")
+        return
+
+    await submit_result(update, context, mid, mine, theirs)
+
+print("UZ MATCH FINDER PATCH LOADED")
+# ===== END PATCH =====
+
