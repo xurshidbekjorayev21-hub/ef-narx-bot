@@ -71,6 +71,10 @@ def init_match_db():
             c.execute("ALTER TABLE mf_matches ADD COLUMN p2_score INTEGER")
         if "confirmed_by" not in cols:
             c.execute("ALTER TABLE mf_matches ADD COLUMN confirmed_by INTEGER")
+        if "host_id" not in cols:
+            c.execute("ALTER TABLE mf_matches ADD COLUMN host_id INTEGER")
+        if "room_id" not in cols:
+            c.execute("ALTER TABLE mf_matches ADD COLUMN room_id TEXT")
 
 def user_row(uid):
     with conn() as c:
