@@ -14,6 +14,8 @@ from telegram.ext import (
     ContextTypes, filters
 )
 
+from match_finder import register_match_finder
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -273,7 +275,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Akkauntni baholash uchun /bahola buyrug‘ini bosing. Avval eFootball jamoangizning "
         "o‘yin ichidagi skrinshotini yuborish so‘raladi. Boshqa rasmlar qabul qilinmaydi.\n\n"
         "Narx faqat yetarli o‘xshash ma’lumot bo‘lsa ko‘rsatiladi; bu kafolatlangan sotuv narxi emas.",
-        reply_markup=kb(["💰 Akkauntni baholash"]),
+        reply_markup=kb(["⚽ UZ MATCH FINDER", "💰 Akkauntni baholash"]),
     )
 
 
@@ -610,6 +612,7 @@ def main():
     app.add_handler(CommandHandler("narx", narx_cmd))
     app.add_handler(CommandHandler("addsale", addsale))
     app.add_handler(conv)
+    register_match_finder(app)
     log.info("eF Narx Bot ishga tushmoqda.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
