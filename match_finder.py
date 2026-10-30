@@ -41,7 +41,7 @@ def init_match_db():
         CREATE TABLE IF NOT EXISTS mf_users(
             user_id INTEGER PRIMARY KEY, display_name TEXT NOT NULL DEFAULT '',
             platform TEXT NOT NULL DEFAULT '', division TEXT NOT NULL DEFAULT '',
-            region TEXT NOT NULL DEFAULT '', rating INTEGER NOT NULL DEFAULT 1000,
+            region TEXT NOT NULL DEFAULT '', rating INTEGER NOT NULL DEFAULT 0,
             rules_ok INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS mf_queue(
@@ -150,8 +150,16 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "mf:menu":
         await q.edit_message_text("⚽ UZ MATCH FINDER", reply_markup=match_menu())
     elif data == "mf:rating":
-        rating = row["rating"] if row else 1000
-        await q.edit_message_text(f"📊 Reytingingiz: {rating}", reply_markup=match_menu())
+        with conn() as c:
+            top = c.execute("SELECT display_name, rating FROM mf_users WHERE display_name !=  ORDER BY rating DESC, display_name ASC LIMIT 10").fetchall()
+        lines = ["🏆 UZ MATCH FINDER — TOP 10", ""]
+        medals = ["🥇", "🥈", "🥉"]
+        for i, player in enumerate(top, 1):
+            medal = medals[i-1] if i <= 3 else f"{i}."
+            lines.append(f"{medal} {player[display_name]} — {player[rating]} ochko")
+        if not top:
+            lines.append("Hozircha reytingda o‘yinchilar yo‘q.")
+        await q.edit_message_text("\n".join(lines), reply_markup=match_menu())
     elif data == "mf:find":
         if not row or not row["display_name"] or not row["platform"]:
             await q.edit_message_text("Avval profilingizni to‘ldiring.", reply_markup=InlineKeyboardMarkup(
@@ -250,8 +258,8 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 winner = m["player1"] if m["p1_score"] > m["p2_score"] else m["player2"] if m["p2_score"] > m["p1_score"] else None
                 if winner:
                     loser = m["player2"] if winner == m["player1"] else m["player1"]
-                    c.execute("UPDATE mf_users SET rating=rating+20 WHERE user_id=?", (winner,))
-                    c.execute("UPDATE mf_users SET rating=MAX(0,rating-20) WHERE user_id=?", (loser,))
+                    c.execute("UPDATE mf_users SET rating=rating+1 WHERE user_id=?", (winner,))
+                    c.execute("UPDATE mf_users SET rating=CASE WHEN rating>0 THEN MAX(0,rating-0.5) ELSE 0 END WHERE user_id=?", (loser,))
                 lo, hi = sorted((m["player1"],m["player2"]))
                 now = datetime.now(timezone.utc).isoformat()
                 c.execute("INSERT INTO mf_pair_history(user_low,user_high,last_played,count) VALUES(?,?,?,1) "
