@@ -41,7 +41,7 @@ def init_match_db():
         CREATE TABLE IF NOT EXISTS mf_users(
             user_id INTEGER PRIMARY KEY, display_name TEXT NOT NULL DEFAULT '',
             platform TEXT NOT NULL DEFAULT '', division TEXT NOT NULL DEFAULT '',
-            region TEXT NOT NULL DEFAULT '', rating INTEGER NOT NULL DEFAULT 0,
+            region TEXT NOT NULL DEFAULT '', rating REAL NOT NULL DEFAULT 0,
             rules_ok INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS mf_queue(
@@ -151,15 +151,32 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text("⚽ UZ MATCH FINDER", reply_markup=match_menu())
     elif data == "mf:rating":
         with conn() as c:
-            top = c.execute("SELECT display_name, rating FROM mf_users WHERE display_name !=  ORDER BY rating DESC, display_name ASC LIMIT 10").fetchall()
+            top = c.execute(
+                "SELECT display_name, rating FROM mf_users "
+                "WHERE display_name != '' AND rules_ok=1 "
+                "ORDER BY rating DESC, display_name ASC LIMIT 10"
+            ).fetchall()
+
         lines = ["🏆 UZ MATCH FINDER — TOP 10", ""]
         medals = ["🥇", "🥈", "🥉"]
+
         for i, player in enumerate(top, 1):
             medal = medals[i-1] if i <= 3 else f"{i}."
-            lines.append(f"{medal} {player[display_name]} — {player[rating]} ochko")
+            lines.append(
+                f"{medal} {player['display_name']} — {player['rating']:g} ochko"
+            )
+
         if not top:
             lines.append("Hozircha reytingda o‘yinchilar yo‘q.")
-        await q.edit_message_text("\n".join(lines), reply_markup=match_menu())
+
+        await q.edit_message_text(
+            "\\n".join(lines),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Yangilash", callback_data="mf:rating")],
+                [InlineKeyboardButton("⬅️ Menyu", callback_data="mf:menu")]
+            ])
+        )
+
     elif data == "mf:find":
         if not row or not row["display_name"] or not row["platform"]:
             await q.edit_message_text("Avval profilingizni to‘ldiring.", reply_markup=InlineKeyboardMarkup(

@@ -11,6 +11,8 @@ primary_region = 'ams'
 
 [env]
   PYTHONUNBUFFERED = '1'
+  SQLITE_PATH = '/data/ef_narx.db'
+  MATCH_DB_PATH = '/data/match_finder.db'
 
 [processes]
   app = 'python -u main.py'
@@ -28,3 +30,7 @@ primary_region = 'ams'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 256
+
+[mounts]
+  source = "efnarx_data"
+  destination = "/data"
