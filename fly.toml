@@ -31,6 +31,6 @@ primary_region = 'ams'
   cpus = 1
   memory_mb = 256
 
-[mounts]
+[[mounts]]
   source = "efnarx_data"
   destination = "/data"
