@@ -158,19 +158,16 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ).fetchall()
 
         lines = ["🏆 UZ MATCH FINDER — TOP 10", ""]
-        medals = ["🥇", "🥈", "🥉"]
-
         for i, player in enumerate(top, 1):
-            medal = medals[i-1] if i <= 3 else f"{i}."
             lines.append(
-                f"{medal} {player['display_name']} — {player['rating']:g} ochko"
+                f"{i}. {player['display_name']} — {player['rating']:g} ochko"
             )
 
         if not top:
             lines.append("Hozircha reytingda o‘yinchilar yo‘q.")
 
         await q.edit_message_text(
-            "\\n".join(lines),
+            "\n".join(lines),
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Yangilash", callback_data="mf:rating")],
                 [InlineKeyboardButton("⬅️ Menyu", callback_data="mf:menu")]
