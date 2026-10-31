@@ -90,7 +90,7 @@ def match_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("👤 Profilim", callback_data="mf:profile")],
         [InlineKeyboardButton("🔎 Raqib topish", callback_data="mf:find")],
-        [InlineKeyboardButton("📊 Reytingim", callback_data="mf:rating")],
+        [InlineKeyboardButton("🏆 TOP 10", callback_data="mf:rating")],
         [InlineKeyboardButton("📖 Qoidalar", callback_data="mf:rules")],
     ])
 
