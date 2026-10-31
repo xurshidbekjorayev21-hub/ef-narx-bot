@@ -10,8 +10,9 @@ from statistics import median
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, ConversationHandler, CallbackQueryHandler, CallbackQueryHandler,
-    ContextTypes, filters
+    Application, CommandHandler, MessageHandler, ConversationHandler,
+    CallbackQueryHandler, ContextTypes, filters, TypeHandler,
+    ApplicationHandlerStop
 )
 
 from match_finder import register_match_finder
@@ -266,6 +267,20 @@ async def check_subscription_callback(update: Update, context: ContextTypes.DEFA
         await query.message.reply_text(
             "✅ Uchala obuna ham tasdiqlandi! Endi botdan foydalanishingiz mumkin."
         )
+
+async def enforce_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.effective_user:
+        return
+
+    query = update.callback_query
+    if query and query.data == "check_subscription":
+        return
+
+    if not await subscription_check(update, context):
+        if query:
+            await query.answer()
+        raise ApplicationHandlerStop
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await subscription_check(update, context):
@@ -606,6 +621,7 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
         allow_reentry=True,
     )
+    app.add_handler(TypeHandler(Update, enforce_subscription), group=-1)
     app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="^check_subscription$"))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
